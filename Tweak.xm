@@ -3,19 +3,11 @@
 static CGFloat const SC16_TOP_CROP = 34.0;
 static CGFloat const SC16_BOTTOM_CROP = 34.0;
 
-
-/*
- * Chỉ chạy trên iOS 16.4
- */
 static BOOL SC16Enabled(void) {
     NSString *version = UIDevice.currentDevice.systemVersion;
     return [version hasPrefix:@"16.4"];
 }
 
-
-/*
- * Xác định orientation hiện tại của Scene.
- */
 static BOOL SC16IsPortrait(UIWindowScene *scene) {
     if (!scene)
         return YES;
@@ -26,97 +18,50 @@ static BOOL SC16IsPortrait(UIWindowScene *scene) {
     return UIInterfaceOrientationIsPortrait(orientation);
 }
 
-
-/*
- * Crop một UIWindow.
- *
- * PORTRAIT:
- *   1284 × 2778
- *   top    = 34
- *   bottom = 34
- *   content = 1284 × 2710
- *
- * LANDSCAPE:
- *   2778 × 1284
- *   left  = 34
- *   right = 34
- *   content = 2710 × 1284
- */
 static void SC16ApplyToWindow(UIWindow *window) {
-
-    if (!SC16Enabled())
-        return;
-
-    if (!window || window.hidden)
+    if (!SC16Enabled() || !window || window.hidden)
         return;
 
     UIWindowScene *scene = window.windowScene;
-
     if (!scene)
         return;
 
-    UIScreen *screen =
-        scene.screen ?: UIScreen.mainScreen;
-
+    UIScreen *screen = scene.screen ?: UIScreen.mainScreen;
     CGRect screenBounds = screen.bounds;
 
-    CGFloat width =
-        CGRectGetWidth(screenBounds);
-
-    CGFloat height =
-        CGRectGetHeight(screenBounds);
+    CGFloat width = CGRectGetWidth(screenBounds);
+    CGFloat height = CGRectGetHeight(screenBounds);
 
     if (width <= 0.0 || height <= 0.0)
         return;
 
-
     /*
      * Chỉ xử lý window ứng dụng bình thường.
-     *
-     * Không đụng:
-     * - keyboard
-     * - alert
-     * - system overlay
-     * - các window đặc biệt
      */
     if (window.windowLevel != UIWindowLevelNormal)
         return;
 
-
     /*
-     * Không scale.
+     * Không scale / không kéo giãn.
      */
     window.transform = CGAffineTransformIdentity;
-
     window.clipsToBounds = YES;
 
-
-    BOOL portrait =
-        SC16IsPortrait(scene);
+    BOOL portrait = SC16IsPortrait(scene);
 
     CGRect targetFrame;
-
 
     if (portrait) {
 
         /*
-         * ==========================
          * PORTRAIT
-         * ==========================
          *
          * 1284 × 2778
          *
-         *       34 px
-         *     ┌───────────┐
-         *     │   CROP    │
-         *     ├───────────┤
-         *     │           │
-         *     │  CONTENT  │
-         *     │           │
-         *     ├───────────┤
-         *     │   CROP    │
-         *     └───────────┘
-         *       34 px
+         * Top    = 34 px
+         * Bottom = 34 px
+         *
+         * Content = 1284 × 2710
          */
 
         CGFloat contentHeight =
@@ -126,7 +71,6 @@ static void SC16ApplyToWindow(UIWindow *window) {
 
         if (contentHeight <= 0.0)
             return;
-
 
         targetFrame = CGRectMake(
             0.0,
@@ -138,21 +82,17 @@ static void SC16ApplyToWindow(UIWindow *window) {
     } else {
 
         /*
-         * ==========================
          * LANDSCAPE
-         * ==========================
          *
          * 2778 × 1284
          *
-         *     34px                 34px
-         *       ↓                     ↓
-         *   ┌────┬────────────────────┬────┐
-         *   │CROP│      CONTENT       │CROP│
-         *   │    │                    │    │
-         *   └────┴────────────────────┴────┘
+         * Tai thỏ / cạnh trên của máy khi dọc
+         * trở thành cạnh trái khi xoay ngang.
          *
-         * Content:
-         *   2710 × 1284
+         * Crop trái  = 34 px
+         * Crop phải  = 34 px
+         *
+         * Content = 2710 × 1284
          */
 
         CGFloat contentWidth =
@@ -163,7 +103,6 @@ static void SC16ApplyToWindow(UIWindow *window) {
         if (contentWidth <= 0.0)
             return;
 
-
         targetFrame = CGRectMake(
             SC16_TOP_CROP,
             0.0,
@@ -172,67 +111,42 @@ static void SC16ApplyToWindow(UIWindow *window) {
         );
     }
 
-
     /*
-     * Chỉ thay frame khi thực sự khác.
+     * Đặt window vào vùng hiển thị đã crop.
      */
-    if (!CGRectEqualToRect(
-            window.frame,
-            targetFrame)) {
-
+    if (!CGRectEqualToRect(window.frame, targetFrame)) {
         window.frame = targetFrame;
     }
 
-
     /*
-     * QUAN TRỌNG:
+     * Đưa root view vào đúng bounds mới.
      *
-     * Root view phải nhận bounds mới.
-     *
-     * Như vậy UI được layout trong vùng
-     * đã crop, thay vì giữ layout cũ rồi
-     * bị một vùng đen che lên.
+     * Không để UI cũ nằm ngoài vùng hiển thị
+     * rồi bị thanh đen che.
      */
     UIViewController *rootVC =
         window.rootViewController;
 
     if (rootVC) {
 
-        rootVC.view.frame =
-            window.bounds;
+        rootVC.view.frame = window.bounds;
 
         [rootVC.view setNeedsLayout];
-
         [rootVC.view layoutIfNeeded];
     }
 }
 
-
-/*
- * Apply cho toàn bộ window trong một Scene.
- */
 static void SC16ApplyScene(UIWindowScene *scene) {
-
-    if (!SC16Enabled())
+    if (!SC16Enabled() || !scene)
         return;
-
-    if (!scene)
-        return;
-
 
     if (scene.activationState ==
-        UISceneActivationStateUnattached) {
-
+        UISceneActivationStateUnattached)
         return;
-    }
-
 
     for (UIWindow *window in scene.windows) {
 
-        if (!window)
-            continue;
-
-        if (window.hidden)
+        if (!window || window.hidden)
             continue;
 
         if (window.windowLevel != UIWindowLevelNormal)
@@ -242,67 +156,44 @@ static void SC16ApplyScene(UIWindowScene *scene) {
     }
 }
 
-
-/*
- * Apply cho toàn bộ Scene hiện tại.
- */
 static void SC16ApplyAllScenes(void) {
-
     if (!SC16Enabled())
         return;
-
 
     UIApplication *app =
         UIApplication.sharedApplication;
 
-
     for (UIScene *scene in app.connectedScenes) {
 
-        if (![scene
-              isKindOfClass:[UIWindowScene class]]) {
-
+        if (![scene isKindOfClass:[UIWindowScene class]])
             continue;
-        }
 
-
-        UIWindowScene *windowScene =
-            (UIWindowScene *)scene;
-
-
-        SC16ApplyScene(windowScene);
+        SC16ApplyScene((UIWindowScene *)scene);
     }
 }
 
 
 /*
- * ==========================
+ * =========================
  * UIWindow
- * ==========================
+ * =========================
  *
- * Chỉ hook makeKeyAndVisible.
- *
- * KHÔNG hook setFrame:
- * vì UIKit có thể gọi setFrame liên tục
- * trong quá trình rotation/layout.
+ * Không hook setFrame:
+ * tránh recursion và Safe Mode.
  */
 %hook UIWindow
 
 - (void)makeKeyAndVisible {
-
     %orig;
-
 
     if (!SC16Enabled())
         return;
 
-
     UIWindow *targetWindow = self;
-
 
     dispatch_async(
         dispatch_get_main_queue(),
         ^{
-
             SC16ApplyToWindow(targetWindow);
         }
     );
@@ -312,50 +203,15 @@ static void SC16ApplyAllScenes(void) {
 
 
 /*
- * ==========================
- * UIWindowScene
- * ==========================
- *
- * Khi Scene thay đổi geometry,
- * apply lại crop sau khi UIKit xử lý.
- */
-%hook UIWindowScene
-
-- (void)requestGeometryUpdateWithPreferences:
-    (UIWindowSceneGeometryPreferences *)preferences
-    errorHandler:
-    (void (^)(NSError *error))errorHandler {
-
-    %orig(
-        preferences,
-        errorHandler
-    );
-
-
-    dispatch_async(
-        dispatch_get_main_queue(),
-        ^{
-
-            SC16ApplyScene(self);
-        }
-    );
-}
-
-%end
-
-
-/*
- * ==========================
+ * =========================
  * Constructor
- * ==========================
+ * =========================
  */
 %ctor {
-
     @autoreleasepool {
 
         if (!SC16Enabled())
             return;
-
 
         /*
          * Apply lần đầu.
@@ -363,14 +219,12 @@ static void SC16ApplyAllScenes(void) {
         dispatch_async(
             dispatch_get_main_queue(),
             ^{
-
                 SC16ApplyAllScenes();
             }
         );
 
-
         /*
-         * App trở lại foreground.
+         * App active.
          */
         [[NSNotificationCenter defaultCenter]
             addObserverForName:
@@ -386,7 +240,7 @@ static void SC16ApplyAllScenes(void) {
 
 
         /*
-         * Scene vừa active.
+         * Scene active.
          */
         [[NSNotificationCenter defaultCenter]
             addObserverForName:
@@ -397,9 +251,7 @@ static void SC16ApplyAllScenes(void) {
             usingBlock:
                 ^(NSNotification *notification) {
 
-                UIScene *scene =
-                    notification.object;
-
+                UIScene *scene = notification.object;
 
                 if ([scene
                      isKindOfClass:
@@ -413,10 +265,11 @@ static void SC16ApplyAllScenes(void) {
 
 
         /*
-         * Orientation thay đổi.
+         * Xoay màn hình.
          *
-         * Đợi UIKit hoàn tất rotation rồi
-         * lấy lại screen.bounds mới.
+         * Sau khi UIKit đổi orientation,
+         * đọc lại scene.screen.bounds rồi
+         * crop lại theo orientation mới.
          */
         [[NSNotificationCenter defaultCenter]
             addObserverForName:
