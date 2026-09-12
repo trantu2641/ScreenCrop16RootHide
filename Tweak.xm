@@ -1,5 +1,4 @@
 #import <UIKit/UIKit.h>
-#import <QuartzCore/QuartzCore.h>
 
 static CGFloat const SC16_CROP = 34.0;
 
@@ -8,103 +7,142 @@ static BOOL SC16Enabled(void)
     return [UIDevice.currentDevice.systemVersion hasPrefix:@"16."];
 }
 
-static void SC16CropWindow(UIWindow *window)
+static BOOL SC16ValidWindow(UIWindow *window)
 {
-    if (!window || !SC16Enabled())
+    if (!window)
+        return NO;
+
+    if (window.hidden)
+        return NO;
+
+    if (window.alpha <= 0.0)
+        return NO;
+
+    NSString *name =
+        NSStringFromClass(window.class);
+
+    /*
+     * Bỏ qua keyboard / text effects.
+     */
+    if ([name containsString:@"Keyboard"])
+        return NO;
+
+    if ([name containsString:@"TextEffects"])
+        return NO;
+
+    /*
+     * Bỏ qua status bar window.
+     */
+    if ([name containsString:@"StatusBar"])
+        return NO;
+
+    return YES;
+}
+
+static void SC16ApplyViewport(UIWindow *window)
+{
+    if (!SC16Enabled())
         return;
 
-    if (window.hidden || window.alpha <= 0.0)
+    if (!SC16ValidWindow(window))
         return;
 
-    UIViewController *vc = window.rootViewController;
-    UIView *rootView = vc.view;
+    UIViewController *root =
+        window.rootViewController;
 
-    if (!rootView)
+    if (!root)
         return;
 
-    CGRect bounds = rootView.bounds;
+    UIView *view =
+        root.view;
 
-    CGFloat width = CGRectGetWidth(bounds);
-    CGFloat height = CGRectGetHeight(bounds);
+    if (!view)
+        return;
+
+    CGRect windowBounds =
+        window.bounds;
+
+    CGFloat width =
+        CGRectGetWidth(windowBounds);
+
+    CGFloat height =
+        CGRectGetHeight(windowBounds);
 
     if (width <= 0.0 || height <= 0.0)
         return;
 
-    CGFloat left = 0.0;
-    CGFloat right = 0.0;
-    CGFloat top = 0.0;
-    CGFloat bottom = 0.0;
+    BOOL landscape =
+        width > height;
+
+    UIEdgeInsets inset = UIEdgeInsetsZero;
 
     /*
      * DỌC
      *
-     * 34 trên
-     * 34 dưới
+     * ┌─────────────────┐
+     * │      34         │
+     * ├─────────────────┤
+     * │                 │
+     * │      UI         │
+     * │                 │
+     * ├─────────────────┤
+     * │      34         │
+     * └─────────────────┘
      */
-    if (height > width)
+    if (!landscape)
     {
-        top = SC16_CROP;
-        bottom = SC16_CROP;
+        inset.top =
+            SC16_CROP;
+
+        inset.bottom =
+            SC16_CROP;
     }
     /*
      * NGANG
      *
-     * 34 trái
-     * 34 phải
+     * ┌────┬─────────────┬────┐
+     * │ 34 │     UI      │ 34 │
+     * └────┴─────────────┴────┘
      */
     else
     {
-        left = SC16_CROP;
-        right = SC16_CROP;
+        inset.left =
+            SC16_CROP;
+
+        inset.right =
+            SC16_CROP;
     }
 
-    CGFloat cropWidth =
-        width - left - right;
-
-    CGFloat cropHeight =
-        height - top - bottom;
-
-    if (cropWidth <= 0.0 ||
-        cropHeight <= 0.0)
-        return;
-
-    /*
-     * Xóa crop cũ.
-     */
-    rootView.layer.mask = nil;
-
-    /*
-     * Không thay đổi:
-     *
-     * frame
-     * bounds
-     * center
-     * transform
-     * safeArea
-     */
-    CGRect visibleRect = CGRectMake(
-        left,
-        top,
-        cropWidth,
-        cropHeight
-    );
-
-    CAShapeLayer *mask =
-        [CAShapeLayer layer];
-
-    mask.frame = bounds;
-
-    CGPathRef path =
-        CGPathCreateWithRect(
-            visibleRect,
-            NULL
+    CGRect newFrame =
+        UIEdgeInsetsInsetRect(
+            windowBounds,
+            inset
         );
 
-    mask.path = path;
+    if (newFrame.size.width <= 0.0 ||
+        newFrame.size.height <= 0.0)
+    {
+        return;
+    }
 
-    CGPathRelease(path);
+    /*
+     * QUAN TRỌNG:
+     *
+     * Không transform.
+     * Không mask.
+     * Không thay UIWindow.
+     *
+     * Chỉ thay vùng viewport của root view.
+     */
+    view.frame =
+        newFrame;
 
-    rootView.layer.mask = mask;
+    /*
+     * Cho UIKit layout lại UI trong
+     * vùng mới.
+     */
+    [view setNeedsLayout];
+    [view layoutIfNeeded];
 }
 
 static void SC16ApplyAll(void)
@@ -125,11 +163,13 @@ static void SC16ApplyAll(void)
 
         if (ws.activationState ==
             UISceneActivationStateUnattached)
+        {
             continue;
+        }
 
         for (UIWindow *window in ws.windows)
         {
-            SC16CropWindow(window);
+            SC16ApplyViewport(window);
         }
     }
 }
@@ -143,12 +183,13 @@ static void SC16ApplyAll(void)
     if (!SC16Enabled())
         return;
 
-    UIWindow *window = self;
+    UIWindow *window =
+        self;
 
     dispatch_async(
         dispatch_get_main_queue(),
         ^{
-            SC16CropWindow(window);
+            SC16ApplyViewport(window);
         }
     );
 }
@@ -170,7 +211,10 @@ static void SC16ApplyAll(void)
                 dispatch_after(
                     dispatch_time(
                         DISPATCH_TIME_NOW,
-                        (int64_t)(0.5 * NSEC_PER_SEC)
+                        (int64_t)(
+                            0.3 *
+                            NSEC_PER_SEC
+                        )
                     ),
                     dispatch_get_main_queue(),
                     ^{
