@@ -369,10 +369,9 @@ static void SC16ScheduleApply(void)
     if (!SC16Enabled())
         return;
 
-    dispatch_async(dispatch_get_main_queue(), ^{
-        SC16ApplyAllScenes;
-    });
-}
+ dispatch_async(dispatch_get_main_queue(), ^{
+    SC16ApplyAllScenes();
+});
 
 #pragma mark - UIWindow Hook
 
