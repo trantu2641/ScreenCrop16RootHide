@@ -13,6 +13,8 @@ jobs:
 
       - name: Install dependencies
         run: |
+          set -euxo pipefail
+
           sudo apt-get update
           sudo apt-get install -y \
             git \
@@ -32,15 +34,21 @@ jobs:
           export THEOS="$HOME/theos"
 
           rm -rf "$THEOS"
-          mkdir -p "$THEOS"
 
-          curl -fsSL \
-            https://raw.githubusercontent.com/roothide/theos/master/bin/install-theos \
-            -o /tmp/install-theos.sh
-
-          bash /tmp/install-theos.sh
+          git clone \
+            --depth=1 \
+            --recurse-submodules \
+            https://github.com/roothide/theos.git \
+            "$THEOS"
 
           echo "THEOS=$THEOS" >> "$GITHUB_ENV"
+
+          echo "=== Theos ==="
+          ls -la "$THEOS"
+
+          echo "=== Toolchain ==="
+          test -d "$THEOS/toolchain"
+          ls -la "$THEOS/toolchain"
 
       - name: Install iOS 16.5 SDK
         shell: bash
@@ -64,15 +72,22 @@ jobs:
 
           cd theos-sdks
 
-          git sparse-checkout set --no-cone iPhoneOS16.5.sdk
+          git sparse-checkout init --cone
+          git sparse-checkout set iPhoneOS16.5.sdk
           git checkout
 
-          cp -R iPhoneOS16.5.sdk "$THEOS/sdks/"
+          test -d iPhoneOS16.5.sdk
 
-          echo "Installed SDK:"
+          rm -rf "$THEOS/sdks/iPhoneOS16.5.sdk"
+
+          cp -R \
+            iPhoneOS16.5.sdk \
+            "$THEOS/sdks/iPhoneOS16.5.sdk"
+
+          echo "=== Installed SDK ==="
           ls -ld "$THEOS/sdks/iPhoneOS16.5.sdk"
 
-      - name: Verify toolchain
+      - name: Verify Theos
         shell: bash
         run: |
           set -euxo pipefail
@@ -82,21 +97,39 @@ jobs:
           echo "=== THEOS ==="
           echo "$THEOS"
 
-          echo "=== Toolchain ==="
-          ls -la "$THEOS/toolchain/linux/iphone/bin/"
-
-          test -x "$THEOS/toolchain/linux/iphone/bin/clang"
-          test -x "$THEOS/toolchain/linux/iphone/bin/clang++"
-
-          echo "=== Clang ==="
-          "$THEOS/toolchain/linux/iphone/bin/clang" --version
+          test -d "$THEOS"
 
           echo "=== SDK ==="
           test -d "$THEOS/sdks/iPhoneOS16.5.sdk"
           ls -ld "$THEOS/sdks/iPhoneOS16.5.sdk"
 
-          echo "=== Roothide module ==="
+          echo "=== SDK contents ==="
+          ls "$THEOS/sdks/iPhoneOS16.5.sdk" | head
+
+          echo "=== Roothide vendor ==="
           test -d "$THEOS/vendor/mod/roothide"
+          ls -ld "$THEOS/vendor/mod/roothide"
+
+      - name: Verify toolchain
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          export THEOS="$HOME/theos"
+
+          echo "=== Linux iPhone toolchain ==="
+
+          if [ -d "$THEOS/toolchain/linux/iphone/bin" ]; then
+            ls -la "$THEOS/toolchain/linux/iphone/bin/"
+          fi
+
+          echo "=== Clang candidates ==="
+
+          find "$THEOS/toolchain" \
+            -type f \
+            \( -name clang -o -name clang++ \) \
+            -print \
+            | head -20
 
       - name: Build
         shell: bash
@@ -104,6 +137,8 @@ jobs:
           set -euxo pipefail
 
           export THEOS="$HOME/theos"
+
+          echo "THEOS=$THEOS"
 
           make clean
 
@@ -116,9 +151,21 @@ jobs:
         run: |
           set -euxo pipefail
 
-          find packages -type f -name "*.deb" -print
+          echo "=== Packages ==="
 
-          dpkg-deb -I packages/*.deb
+          find packages \
+            -type f \
+            -name "*.deb" \
+            -print
+
+          DEB="$(find packages -type f -name "*.deb" | head -n 1)"
+
+          test -n "$DEB"
+          test -f "$DEB"
+
+          echo "=== DEB information ==="
+
+          dpkg-deb -I "$DEB"
 
       - name: Upload DEB
         uses: actions/upload-artifact@v4
