@@ -1,36 +1,42 @@
 #import <UIKit/UIKit.h>
 #import <QuartzCore/QuartzCore.h>
+#import <Foundation/Foundation.h>
 
 #pragma mark - Configuration
 
 /*
- * Cắt 34 pixel vật lý ở mỗi đầu của CẠNH DÀI.
+ * Cắt 34 pixel vật lý ở CẢ 4 CẠNH.
  *
- * Portrait:
- *   1284 x 2778
- *   -> cắt trên / dưới
- *
- * Landscape:
- *   2778 x 1284
- *   -> cắt trái / phải
+ * 34 physical px sẽ được đổi sang UIKit points
+ * bằng nativeScale của màn hình.
  */
 static CGFloat const SC16_CROP_PIXELS = 34.0;
 
 /*
- * Góc UI đa nhiệm.
+ * UI đa nhiệm / App Switcher:
  *
- * 0 = vuông hoàn toàn.
+ * 0 = góc vuông hoàn toàn.
  */
 static CGFloat const SC16_MULTITASK_CORNER = 0.0;
 
-/*
- * Chỉ chạy iOS 16.x.
- */
+#pragma mark - Enable
+
 static BOOL SC16Enabled(void)
 {
-    NSString *version = UIDevice.currentDevice.systemVersion;
+    NSString *version =
+        UIDevice.currentDevice.systemVersion;
 
     return [version hasPrefix:@"16."];
+}
+
+#pragma mark - Process Detection
+
+static BOOL SC16IsSpringBoardProcess(void)
+{
+    NSString *process =
+        [NSProcessInfo processInfo].processName;
+
+    return [process isEqualToString:@"SpringBoard"];
 }
 
 #pragma mark - Window Classification
@@ -40,7 +46,8 @@ static BOOL SC16IsKeyboardWindow(UIWindow *window)
     if (!window)
         return YES;
 
-    NSString *name = NSStringFromClass(window.class);
+    NSString *name =
+        NSStringFromClass(window.class);
 
     if ([name containsString:@"UITextEffectsWindow"])
         return YES;
@@ -62,7 +69,8 @@ static BOOL SC16IsStatusBarWindow(UIWindow *window)
     if (!window)
         return YES;
 
-    NSString *name = NSStringFromClass(window.class);
+    NSString *name =
+        NSStringFromClass(window.class);
 
     if ([name containsString:@"StatusBar"])
         return YES;
@@ -78,12 +86,10 @@ static BOOL SC16IsTextEffectsWindow(UIWindow *window)
     if (!window)
         return NO;
 
-    NSString *name = NSStringFromClass(window.class);
+    NSString *name =
+        NSStringFromClass(window.class);
 
-    if ([name containsString:@"TextEffects"])
-        return YES;
-
-    return NO;
+    return [name containsString:@"TextEffects"];
 }
 
 static BOOL SC16IsAlertWindow(UIWindow *window)
@@ -91,7 +97,8 @@ static BOOL SC16IsAlertWindow(UIWindow *window)
     if (!window)
         return NO;
 
-    NSString *name = NSStringFromClass(window.class);
+    NSString *name =
+        NSStringFromClass(window.class);
 
     if ([name containsString:@"Alert"])
         return YES;
@@ -102,6 +109,9 @@ static BOOL SC16IsAlertWindow(UIWindow *window)
     return NO;
 }
 
+/*
+ * Những window này không được crop.
+ */
 static BOOL SC16ShouldSkipCrop(UIWindow *window)
 {
     if (!window)
@@ -113,44 +123,30 @@ static BOOL SC16ShouldSkipCrop(UIWindow *window)
     if (window.alpha <= 0.0)
         return YES;
 
-    /*
-     * Không đụng keyboard.
-     */
     if (SC16IsKeyboardWindow(window))
         return YES;
 
-    /*
-     * Không đụng status bar.
-     */
     if (SC16IsStatusBarWindow(window))
         return YES;
 
-    /*
-     * Không đụng text effects.
-     */
     if (SC16IsTextEffectsWindow(window))
         return YES;
 
-    /*
-     * Không đụng alert.
-     *
-     * Đây là điểm quan trọng để tránh SpringBoard
-     * / UIKit crash khi popup hệ thống xuất hiện.
-     */
     if (SC16IsAlertWindow(window))
         return YES;
 
     return NO;
 }
 
-#pragma mark - Screen Geometry
+#pragma mark - Screen
 
 static UIScreen *SC16ScreenForWindow(UIWindow *window)
 {
     if (!window)
         return UIScreen.mainScreen;
 
-    UIScreen *screen = window.screen;
+    UIScreen *screen =
+        window.screen;
 
     if (!screen)
         screen = UIScreen.mainScreen;
@@ -158,36 +154,18 @@ static UIScreen *SC16ScreenForWindow(UIWindow *window)
     return screen;
 }
 
-static BOOL SC16IsLandscapeWindow(UIWindow *window)
-{
-    UIScreen *screen = SC16ScreenForWindow(window);
+#pragma mark - Physical Pixel Conversion
 
-    if (!screen)
-        return NO;
-
-    CGRect bounds = screen.bounds;
-
-    CGFloat width = CGRectGetWidth(bounds);
-    CGFloat height = CGRectGetHeight(bounds);
-
-    return width > height;
-}
-
-/*
- * Chuyển physical pixel -> UIKit point.
- *
- * Ví dụ:
- *
- * 34 px / 3 = 11.333 pt
- */
 static CGFloat SC16CropPoints(UIWindow *window)
 {
-    UIScreen *screen = SC16ScreenForWindow(window);
+    UIScreen *screen =
+        SC16ScreenForWindow(window);
 
     if (!screen)
         return SC16_CROP_PIXELS;
 
-    CGFloat scale = screen.nativeScale;
+    CGFloat scale =
+        screen.nativeScale;
 
     if (scale <= 0.0)
         scale = screen.scale;
@@ -195,26 +173,17 @@ static CGFloat SC16CropPoints(UIWindow *window)
     if (scale <= 0.0)
         scale = 1.0;
 
+    /*
+     * 34 px / nativeScale.
+     *
+     * @3x:
+     * 34 / 3 = 11.333 pt
+     */
     return SC16_CROP_PIXELS / scale;
 }
 
-#pragma mark - Real Rendering Crop
+#pragma mark - Real Four-Side Crop
 
-/*
- * CẮT THỰC SỰ bằng layer clipping.
- *
- * Không:
- *   - overlay đen
- *   - transform
- *   - scale
- *   - thay đổi frame
- *   - thay đổi center
- *   - thay đổi bounds
- *
- * Window vẫn giữ nguyên geometry.
- *
- * Chỉ phần ngoài vùng visibleRect không được render.
- */
 static void SC16ApplyCrop(UIWindow *window)
 {
     if (!SC16Enabled())
@@ -223,59 +192,69 @@ static void SC16ApplyCrop(UIWindow *window)
     if (SC16ShouldSkipCrop(window))
         return;
 
-    CGRect bounds = window.bounds;
-
-    CGFloat width = CGRectGetWidth(bounds);
-    CGFloat height = CGRectGetHeight(bounds);
-
-    if (width <= 0.0 || height <= 0.0)
+    /*
+     * Không crop SpringBoard window ở đây.
+     *
+     * Đây là phần quan trọng để tránh phá các
+     * window hệ thống của SpringBoard.
+     */
+    if (SC16IsSpringBoardProcess())
         return;
 
-    CGFloat crop = SC16CropPoints(window);
+    CGRect bounds =
+        window.bounds;
+
+    CGFloat width =
+        CGRectGetWidth(bounds);
+
+    CGFloat height =
+        CGRectGetHeight(bounds);
+
+    if (width <= 0.0 ||
+        height <= 0.0)
+        return;
+
+    CGFloat crop =
+        SC16CropPoints(window);
 
     if (crop <= 0.0)
         return;
 
-    CGFloat left = 0.0;
-    CGFloat right = 0.0;
-    CGFloat top = 0.0;
-    CGFloat bottom = 0.0;
-
     /*
-     * Luôn cắt CẠNH DÀI.
+     * CẮT CẢ 4 CẠNH.
+     *
+     * Không còn logic portrait / landscape.
      *
      * Portrait:
      *
-     *  ┌────────────┐
-     *  │    34px    │
-     *  │────────────│
-     *  │            │
-     *  │            │
-     *  │            │
-     *  │────────────│
-     *  │    34px    │
-     *  └────────────┘
+     *     34
+     *  ┌──────────┐
+     *  │XXXXXXXXXX│
+     *  │          │
+     *  │          │
+     *  │XXXXXXXXXX│
+     *  └──────────┘
      *
      * Landscape:
      *
-     *  ┌────────────────────────┐
-     *  │34px                34px│
-     *  │                        │
-     *  │                        │
-     *  └────────────────────────┘
-     *
-     * Landscape KHÔNG cắt cạnh 1248.
+     *  34       34
+     *  ┌──────────┐
+     *  │          │
+     *  │          │
+     *  └──────────┘
      */
-    if (SC16IsLandscapeWindow(window))
-    {
-        left = crop;
-        right = crop;
-    }
-    else
-    {
-        top = crop;
-        bottom = crop;
-    }
+
+    CGFloat left =
+        crop;
+
+    CGFloat right =
+        crop;
+
+    CGFloat top =
+        crop;
+
+    CGFloat bottom =
+        crop;
 
     CGFloat visibleWidth =
         width - left - right;
@@ -285,35 +264,21 @@ static void SC16ApplyCrop(UIWindow *window)
 
     if (visibleWidth <= 0.0 ||
         visibleHeight <= 0.0)
-    {
         return;
-    }
+
+    CALayer *layer =
+        window.layer;
 
     /*
-     * Không đụng geometry của UIWindow.
-     */
-    window.transform = CGAffineTransformIdentity;
-
-    /*
-     * Xóa mask cũ trước.
+     * Nếu mask cũ tồn tại thì xóa trước.
      *
-     * Cực kỳ quan trọng khi xoay màn hình:
-     *
-     * Portrait  -> top/bottom
-     * Landscape -> left/right
+     * Không thay frame/bounds/center/transform.
      */
-    CALayer *layer = window.layer;
-
     layer.mask = nil;
 
     /*
-     * Tạo clipping mask.
+     * Vùng hiển thị thực sự.
      */
-    CAShapeLayer *mask =
-        [CAShapeLayer layer];
-
-    mask.frame = bounds;
-
     CGRect visibleRect =
         CGRectMake(
             CGRectGetMinX(bounds) + left,
@@ -322,33 +287,48 @@ static void SC16ApplyCrop(UIWindow *window)
             visibleHeight
         );
 
+    CAShapeLayer *mask =
+        [CAShapeLayer layer];
+
+    mask.frame =
+        bounds;
+
     CGPathRef path =
         CGPathCreateWithRect(
             visibleRect,
             NULL
         );
 
-    mask.path = path;
+    mask.path =
+        path;
 
     CGPathRelease(path);
 
     /*
-     * Render clipping thật.
+     * Đây là clipping thật.
+     *
+     * Không dùng UIView màu đen.
+     * Không dùng overlay.
+     * Không scale nội dung.
+     *
+     * Phần nằm ngoài visibleRect không được
+     * layer render.
      */
-    layer.mask = mask;
+    layer.mask =
+        mask;
 }
 
-#pragma mark - Multitasking Window Detection
+#pragma mark - Multitasking Detection
 
-/*
- * Chỉ dùng để nhận diện các window có tên liên quan
- * App Switcher / Multitasking.
- *
- * Không ép toàn bộ SpringBoard thành multitasking.
- */
 static BOOL SC16IsMultitaskingWindow(UIWindow *window)
 {
     if (!window)
+        return NO;
+
+    /*
+     * Chỉ kiểm tra trong SpringBoard.
+     */
+    if (!SC16IsSpringBoardProcess())
         return NO;
 
     NSString *name =
@@ -375,13 +355,8 @@ static BOOL SC16IsMultitaskingWindow(UIWindow *window)
     return NO;
 }
 
-/*
- * Góc UI đa nhiệm:
- *
- * 0.0 = vuông hoàn toàn.
- *
- * Không áp dụng cho app window bình thường.
- */
+#pragma mark - Multitasking Corner
+
 static void SC16ApplyMultitaskingCorner(UIWindow *window)
 {
     if (!window)
@@ -391,34 +366,37 @@ static void SC16ApplyMultitaskingCorner(UIWindow *window)
         return;
 
     /*
-     * Chỉ sửa corner radius.
+     * App Switcher / multitasking:
      *
-     * Không thay frame/bounds/transform.
+     * cornerRadius = 0
+     *
+     * => góc vuông.
      */
     window.layer.cornerRadius =
         SC16_MULTITASK_CORNER;
 
-    /*
-     * 0 vẫn giữ nguyên clipping theo
-     * geometry của layer.
-     */
-    window.layer.masksToBounds = YES;
+    window.layer.masksToBounds =
+        YES;
 }
 
-#pragma mark - Apply
+#pragma mark - Apply Window
 
 static void SC16ApplyWindow(UIWindow *window)
 {
     if (!window)
         return;
 
+    if (!SC16Enabled())
+        return;
+
     /*
-     * Crop riêng.
+     * Crop app window.
      */
     SC16ApplyCrop(window);
 
     /*
-     * Corner đa nhiệm riêng.
+     * Chỉ SpringBoard multitasking mới
+     * nhận cornerRadius.
      */
     SC16ApplyMultitaskingCorner(window);
 }
@@ -435,9 +413,7 @@ static void SC16ApplyScene(UIWindowScene *scene)
 
     if (scene.activationState ==
         UISceneActivationStateUnattached)
-    {
         return;
-    }
 
     NSArray<UIWindow *> *windows =
         scene.windows;
@@ -450,6 +426,8 @@ static void SC16ApplyScene(UIWindowScene *scene)
         SC16ApplyWindow(window);
     }
 }
+
+#pragma mark - All Scenes
 
 static void SC16ApplyAllScenes(void)
 {
@@ -484,7 +462,7 @@ static void SC16ScheduleApply(void)
         return;
 
     /*
-     * Chạy sau lifecycle/layout hiện tại.
+     * Không chạy ngay trong lifecycle.
      */
     dispatch_async(
         dispatch_get_main_queue(),
@@ -492,8 +470,8 @@ static void SC16ScheduleApply(void)
             SC16ApplyAllScenes();
 
             /*
-             * UIKit đôi khi resize window sau
-             * notification đầu tiên.
+             * UIKit có thể hoàn tất layout
+             * sau notification.
              */
             dispatch_after(
                 dispatch_time(
@@ -518,9 +496,6 @@ static void SC16InstallObservers(void)
 {
     static BOOL installed = NO;
 
-    /*
-     * Không cài observer nhiều lần.
-     */
     if (installed)
         return;
 
@@ -601,8 +576,9 @@ static void SC16InstallObservers(void)
         }];
 
     /*
-     * Rotation.
+     * Rotation / orientation.
      *
+     * Không hook setFrame.
      * Không dùng UIWindowSceneDidUpdateNotification.
      */
     [center addObserverForName:
@@ -612,38 +588,17 @@ static void SC16InstallObservers(void)
         usingBlock:
         ^(__unused NSNotification *notification)
         {
-            /*
-             * Cho UIKit hoàn tất rotation trước.
-             */
             dispatch_after(
                 dispatch_time(
                     DISPATCH_TIME_NOW,
                     (int64_t)(
-                        0.20 *
+                        0.25 *
                         NSEC_PER_SEC
                     )
                 ),
                 dispatch_get_main_queue(),
                 ^{
                     SC16ApplyAllScenes();
-
-                    /*
-                     * Pass thứ hai cho trường hợp
-                     * bounds được cập nhật trễ.
-                     */
-                    dispatch_after(
-                        dispatch_time(
-                            DISPATCH_TIME_NOW,
-                            (int64_t)(
-                                0.15 *
-                                NSEC_PER_SEC
-                            )
-                        ),
-                        dispatch_get_main_queue(),
-                        ^{
-                            SC16ApplyAllScenes();
-                        }
-                    );
                 }
             );
         }];
@@ -654,7 +609,7 @@ static void SC16InstallObservers(void)
 %hook UIWindow
 
 /*
- * Window mới được tạo và hiển thị.
+ * Window mới hiển thị.
  */
 - (void)makeKeyAndVisible
 {
@@ -663,21 +618,26 @@ static void SC16InstallObservers(void)
     if (!SC16Enabled())
         return;
 
-    UIWindow *window = self;
-
+    /*
+     * Không áp dụng ngay khi UIKit
+     * đang trong lifecycle hiện tại.
+     */
     dispatch_async(
         dispatch_get_main_queue(),
         ^{
-            if (!window)
+            if (!self)
                 return;
 
-            SC16ApplyWindow(window);
+            if (self.hidden)
+                return;
+
+            SC16ApplyWindow(self);
         }
     );
 }
 
 /*
- * Window được show/hide.
+ * Window chuyển sang visible.
  */
 - (void)setHidden:(BOOL)hidden
 {
@@ -689,15 +649,16 @@ static void SC16InstallObservers(void)
     if (hidden)
         return;
 
-    UIWindow *window = self;
-
     dispatch_async(
         dispatch_get_main_queue(),
         ^{
-            if (!window || window.hidden)
+            if (!self)
                 return;
 
-            SC16ApplyWindow(window);
+            if (self.hidden)
+                return;
+
+            SC16ApplyWindow(self);
         }
     );
 }
@@ -714,11 +675,7 @@ static void SC16InstallObservers(void)
             return;
 
         /*
-         * Không hook setFrame.
-         *
-         * Không thay bounds/frame trong lifecycle.
-         *
-         * Chỉ áp dụng sau khi UIKit đã tạo window.
+         * Chờ UIKit khởi tạo xong.
          */
         dispatch_async(
             dispatch_get_main_queue(),
@@ -727,11 +684,14 @@ static void SC16InstallObservers(void)
 
                 SC16ApplyAllScenes();
 
+                /*
+                 * Apply lần 2 sau khi window ổn định.
+                 */
                 dispatch_after(
                     dispatch_time(
                         DISPATCH_TIME_NOW,
                         (int64_t)(
-                            0.25 *
+                            0.30 *
                             NSEC_PER_SEC
                         )
                     ),
