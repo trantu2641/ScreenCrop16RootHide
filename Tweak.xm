@@ -1,4 +1,5 @@
 #import <UIKit/UIKit.h>
+#import <QuartzCore/QuartzCore.h>
 
 static CGFloat const SC16_CROP = 34.0;
 
@@ -8,19 +9,21 @@ static BOOL SC16Enabled(void)
 }
 
 /*
- * Crop thử nghiệm:
+ * Tạo viewport crop và dịch nội dung.
  *
- * Dọc:
- *   bỏ 34pt trên + 34pt dưới
+ * DỌC:
+ *   crop 34 trên
+ *   crop 34 dưới
  *
- * Ngang:
- *   bỏ 34pt trái + 34pt phải
+ * NGANG:
+ *   crop 34 trái
+ *   crop 34 phải
  *
- * Sau đó ép nội dung vào vùng còn lại.
- *
- * Không dùng CALayer mask.
+ * UIWindow KHÔNG bị resize.
+ * UIWindow KHÔNG bị đổi frame.
+ * UIWindow KHÔNG bị đổi transform.
  */
-static void SC16CropWindow(UIWindow *window)
+static void SC16Apply(UIWindow *window)
 {
     if (!window)
         return;
@@ -31,10 +34,10 @@ static void SC16CropWindow(UIWindow *window)
     if (window.alpha <= 0.0)
         return;
 
-    CGRect frame = window.frame;
+    CGRect bounds = window.bounds;
 
-    CGFloat width = CGRectGetWidth(frame);
-    CGFloat height = CGRectGetHeight(frame);
+    CGFloat width = CGRectGetWidth(bounds);
+    CGFloat height = CGRectGetHeight(bounds);
 
     if (width <= 0.0 || height <= 0.0)
         return;
@@ -45,10 +48,9 @@ static void SC16CropWindow(UIWindow *window)
     CGFloat bottom = 0.0;
 
     /*
-     * DỌC
+     * PORTRAIT
      *
-     * 34 trên
-     * 34 dưới
+     * 34 trên / 34 dưới
      */
     if (height > width)
     {
@@ -56,10 +58,9 @@ static void SC16CropWindow(UIWindow *window)
         bottom = SC16_CROP;
     }
     /*
-     * NGANG
+     * LANDSCAPE
      *
-     * 34 trái
-     * 34 phải
+     * 34 trái / 34 phải
      */
     else
     {
@@ -67,96 +68,140 @@ static void SC16CropWindow(UIWindow *window)
         right = SC16_CROP;
     }
 
-    CGFloat newWidth =
+    CGFloat cropWidth =
         width - left - right;
 
-    CGFloat newHeight =
+    CGFloat cropHeight =
         height - top - bottom;
 
-    if (newWidth <= 0.0 ||
-        newHeight <= 0.0)
+    if (cropWidth <= 0.0 ||
+        cropHeight <= 0.0)
         return;
 
     /*
-     * QUAN TRỌNG:
-     *
-     * Không thay đổi kích thước window.
-     *
-     * Chỉ ép nội dung của window
-     * vào vùng crop.
+     * Lưu root view.
      */
-
     UIView *root =
         window.rootViewController.view;
 
     if (!root)
         return;
 
-    CGRect oldBounds =
-        root.bounds;
-
     /*
-     * Lưu lại trạng thái cũ.
-     */
-    CGFloat oldWidth =
-        CGRectGetWidth(oldBounds);
-
-    CGFloat oldHeight =
-        CGRectGetHeight(oldBounds);
-
-    if (oldWidth <= 0.0 ||
-        oldHeight <= 0.0)
-        return;
-
-    /*
-     * Vùng hiển thị mới.
-     */
-    CGRect target =
-        CGRectMake(
-            left,
-            top,
-            newWidth,
-            newHeight
-        );
-
-    /*
-     * ÉP ROOT VIEW vào vùng còn lại.
+     * QUAN TRỌNG:
      *
-     * Nội dung được scale theo cả X/Y.
-     *
-     * Vì người dùng cho phép méo hình,
-     * không giữ aspect ratio.
-     */
-    root.frame = target;
-
-    root.bounds =
-        CGRectMake(
-            0.0,
-            0.0,
-            oldWidth,
-            oldHeight
-        );
-
-    /*
-     * Ép layer render đúng vùng.
-     */
-    root.layer.masksToBounds = YES;
-
-    /*
-     * Không dùng transform của UIWindow.
+     * Không thay đổi window.frame/bounds.
      */
     window.transform =
         CGAffineTransformIdentity;
 
     /*
-     * Ép layout ngay.
+     * Reset transform của root.
+     *
+     * Bản test này dùng transform để dịch
+     * nội dung vào vùng crop.
+     */
+    root.transform =
+        CGAffineTransformIdentity;
+
+    /*
+     * Đưa nội dung về phía vùng đã crop.
+     *
+     * Dọc:
+     *   nội dung dịch lên 34pt
+     *
+     * Ngang:
+     *   nội dung dịch sang trái 34pt
+     *
+     * Sau đó viewport mask cắt phần thừa.
+     */
+    if (height > width)
+    {
+        root.transform =
+            CGAffineTransformMakeTranslation(
+                0.0,
+                -top
+            );
+    }
+    else
+    {
+        root.transform =
+            CGAffineTransformMakeTranslation(
+                -left,
+                0.0
+            );
+    }
+
+    /*
+     * Tạo viewport.
+     *
+     * Đây mới là vùng được phép render.
+     */
+    CAShapeLayer *mask =
+        [CAShapeLayer layer];
+
+    mask.frame = bounds;
+
+    CGRect visibleRect =
+        CGRectMake(
+            CGRectGetMinX(bounds) + left,
+            CGRectGetMinY(bounds) + top,
+            cropWidth,
+            cropHeight
+        );
+
+    CGPathRef path =
+        CGPathCreateWithRect(
+            visibleRect,
+            NULL
+        );
+
+    mask.path = path;
+
+    CGPathRelease(path);
+
+    /*
+     * Crop thật ở tầng UIWindow.
+     */
+    window.layer.mask = mask;
+
+    /*
+     * Đảm bảo UIKit cập nhật ngay.
      */
     [root setNeedsLayout];
-    [root layoutIfNeeded];
+    [root setNeedsDisplay];
+
+    /*
+     * Không layoutIfNeeded ở đây.
+     *
+     * Tránh UIKit tự thay đổi geometry trong lúc
+     * chúng ta đang crop.
+     */
 }
 
 /*
- * Apply toàn bộ window hiện tại.
+ * Apply các UIWindow thuộc scene.
+ */
+static void SC16ApplyScene(UIWindowScene *scene)
+{
+    if (!scene)
+        return;
+
+    if (scene.activationState ==
+        UISceneActivationStateUnattached)
+        return;
+
+    NSArray<UIWindow *> *windows =
+        scene.windows;
+
+    for (UIWindow *window in windows)
+    {
+        SC16Apply(window);
+    }
+}
+
+/*
+ * Apply toàn bộ scene.
  */
 static void SC16ApplyAll(void)
 {
@@ -175,20 +220,9 @@ static void SC16ApplyAll(void)
               isKindOfClass:[UIWindowScene class]])
             continue;
 
-        UIWindowScene *windowScene =
-            (UIWindowScene *)scene;
-
-        if (windowScene.activationState ==
-            UISceneActivationStateUnattached)
-            continue;
-
-        NSArray<UIWindow *> *windows =
-            windowScene.windows;
-
-        for (UIWindow *window in windows)
-        {
-            SC16CropWindow(window);
-        }
+        SC16ApplyScene(
+            (UIWindowScene *)scene
+        );
     }
 }
 
@@ -209,7 +243,7 @@ static void SC16ApplyAll(void)
     dispatch_async(
         dispatch_get_main_queue(),
         ^{
-            SC16CropWindow(window);
+            SC16Apply(window);
         }
     );
 }
@@ -229,7 +263,7 @@ static void SC16ApplyAll(void)
     dispatch_async(
         dispatch_get_main_queue(),
         ^{
-            SC16CropWindow(window);
+            SC16Apply(window);
         }
     );
 }
@@ -237,7 +271,7 @@ static void SC16ApplyAll(void)
 %end
 
 /*
- * Khởi động.
+ * Constructor.
  */
 %ctor
 {
@@ -249,8 +283,15 @@ static void SC16ApplyAll(void)
         dispatch_async(
             dispatch_get_main_queue(),
             ^{
+                /*
+                 * Lần 1
+                 */
                 SC16ApplyAll();
 
+                /*
+                 * Lần 2 sau khi UIKit hoàn thành
+                 * việc tạo root/window.
+                 */
                 dispatch_after(
                     dispatch_time(
                         DISPATCH_TIME_NOW,
