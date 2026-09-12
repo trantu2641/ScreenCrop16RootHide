@@ -1,7 +1,7 @@
 #import <UIKit/UIKit.h>
 
-static CGFloat const SC16_TOP_CROP = 60.0;
-static CGFloat const SC16_BOTTOM_CROP = 60.0;
+static CGFloat const SC16_TOP_CROP = 34.0;
+static CGFloat const SC16_BOTTOM_CROP = 34.0;
 
 static BOOL SC16Applying = NO;
 
