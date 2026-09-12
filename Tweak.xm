@@ -4,7 +4,7 @@
 #pragma mark - Configuration
 
 /*
- * CROP:
+ * CROP THỰC TẾ
  *
  * Portrait:
  *   trên 34px
@@ -17,20 +17,22 @@
 static CGFloat const SC16_CROP = 34.0;
 
 /*
- * Dịch UI:
+ * DỊCH RIÊNG UI
  *
  * Portrait:
  *   lên 10px
  *
  * Landscape:
  *   sang trái 10px
+ *
+ * Không dùng giá trị này cho crop.
  */
-static CGFloat const SC16_VERTICAL_SHIFT = -10.0;
-static CGFloat const SC16_HORIZONTAL_SHIFT = -10.0;
+static CGFloat const SC16_UI_SHIFT = 10.0;
 
 /*
- * UI đa nhiệm:
- * 0px = không bo.
+ * Đa nhiệm:
+ *
+ * 0 = góc vuông.
  */
 static CGFloat const SC16_MULTITASK_CORNER = 0.0;
 
@@ -46,23 +48,14 @@ static BOOL SC16Enabled(void)
 
 #pragma mark - Window Filter
 
-static BOOL SC16ShouldSkipWindow(UIWindow *window)
+static BOOL SC16IsKeyboardWindow(UIWindow *window)
 {
     if (!window)
-        return YES;
-
-    if (window.hidden)
-        return YES;
-
-    if (window.alpha <= 0.0)
         return YES;
 
     NSString *name =
         NSStringFromClass(window.class);
 
-    /*
-     * Không tác động keyboard.
-     */
     if ([name containsString:@"UITextEffectsWindow"])
         return YES;
 
@@ -75,18 +68,48 @@ static BOOL SC16ShouldSkipWindow(UIWindow *window)
     if ([name containsString:@"KeyboardWindow"])
         return YES;
 
-    /*
-     * Không tác động status bar.
-     */
+    return NO;
+}
+
+static BOOL SC16IsStatusBarWindow(UIWindow *window)
+{
+    if (!window)
+        return YES;
+
+    NSString *name =
+        NSStringFromClass(window.class);
+
     if ([name containsString:@"StatusBar"])
         return YES;
 
     if ([name containsString:@"_UIStatusBar"])
         return YES;
 
-    /*
-     * Không tác động alert.
-     */
+    return NO;
+}
+
+static BOOL SC16IsTextEffectsWindow(UIWindow *window)
+{
+    if (!window)
+        return NO;
+
+    NSString *name =
+        NSStringFromClass(window.class);
+
+    if ([name containsString:@"TextEffects"])
+        return YES;
+
+    return NO;
+}
+
+static BOOL SC16IsAlertWindow(UIWindow *window)
+{
+    if (!window)
+        return NO;
+
+    NSString *name =
+        NSStringFromClass(window.class);
+
     if ([name containsString:@"Alert"])
         return YES;
 
@@ -96,123 +119,64 @@ static BOOL SC16ShouldSkipWindow(UIWindow *window)
     return NO;
 }
 
-#pragma mark - Orientation
-
-static BOOL SC16IsLandscapeWindow(UIWindow *window)
+static BOOL SC16ShouldSkipWindow(UIWindow *window)
 {
     if (!window)
-        return NO;
-
-    CGRect bounds =
-        window.bounds;
-
-    return CGRectGetWidth(bounds) >
-           CGRectGetHeight(bounds);
-}
-
-#pragma mark - Multitasking
-
-static BOOL SC16IsMultitaskingWindow(UIWindow *window)
-{
-    if (!window)
-        return NO;
-
-    NSString *name =
-        NSStringFromClass(window.class);
-
-    if ([name containsString:@"Switcher"])
         return YES;
 
-    if ([name containsString:@"SwitcherWindow"])
+    if (window.hidden)
         return YES;
 
-    if ([name containsString:@"Multitasking"])
+    if (window.alpha <= 0.0)
         return YES;
 
-    if ([name containsString:@"SBAppSwitcher"])
+    if (SC16IsKeyboardWindow(window))
         return YES;
 
-    if ([name containsString:@"SBFluidSwitcher"])
+    if (SC16IsStatusBarWindow(window))
         return YES;
 
-    if ([name containsString:@"FluidSwitcher"])
+    if (SC16IsTextEffectsWindow(window))
+        return YES;
+
+    if (SC16IsAlertWindow(window))
         return YES;
 
     return NO;
 }
 
-static void SC16ApplyMultitaskingCorner(UIWindow *window)
+#pragma mark - Screen Geometry
+
+static UIScreen *SC16ScreenForWindow(UIWindow *window)
 {
     if (!window)
-        return;
+        return UIScreen.mainScreen;
 
-    if (!SC16IsMultitaskingWindow(window))
-        return;
+    UIScreen *screen =
+        window.screen;
 
-    /*
-     * Giữ UI đa nhiệm 0px.
-     */
-    window.layer.cornerRadius =
-        SC16_MULTITASK_CORNER;
+    if (!screen)
+        screen = UIScreen.mainScreen;
 
-    window.layer.masksToBounds =
-        YES;
+    return screen;
 }
 
-#pragma mark - UI Shift
-
-static void SC16ApplyUIShift(UIWindow *window)
+static BOOL SC16IsLandscapeWindow(UIWindow *window)
 {
-    if (!window)
-        return;
+    UIScreen *screen =
+        SC16ScreenForWindow(window);
 
-    if (SC16ShouldSkipWindow(window))
-        return;
+    if (!screen)
+        return NO;
 
-    /*
-     * Không dịch UI đa nhiệm.
-     */
-    if (SC16IsMultitaskingWindow(window))
-        return;
+    CGRect bounds =
+        screen.bounds;
 
-    BOOL landscape =
-        SC16IsLandscapeWindow(window);
-
-    CGFloat x = 0.0;
-    CGFloat y = 0.0;
-
-    if (landscape)
-    {
-        /*
-         * Ngang:
-         * sang trái 10px.
-         */
-        x = SC16_HORIZONTAL_SHIFT;
-    }
-    else
-    {
-        /*
-         * Dọc:
-         * lên 10px.
-         */
-        y = SC16_VERTICAL_SHIFT;
-    }
-
-    /*
-     * Dịch layer UI.
-     */
-    CATransform3D transform =
-        CATransform3DMakeTranslation(
-            x,
-            y,
-            0.0
-        );
-
-    window.layer.transform =
-        transform;
+    return CGRectGetWidth(bounds) >
+           CGRectGetHeight(bounds);
 }
 
-#pragma mark - Crop
+#pragma mark - Real Crop
 
 static void SC16ApplyCrop(UIWindow *window)
 {
@@ -220,12 +184,6 @@ static void SC16ApplyCrop(UIWindow *window)
         return;
 
     if (SC16ShouldSkipWindow(window))
-        return;
-
-    /*
-     * Không crop UI đa nhiệm.
-     */
-    if (SC16IsMultitaskingWindow(window))
         return;
 
     CGRect bounds =
@@ -243,38 +201,34 @@ static void SC16ApplyCrop(UIWindow *window)
         return;
     }
 
+    CGFloat crop =
+        SC16_CROP;
+
     CGFloat left = 0.0;
     CGFloat right = 0.0;
     CGFloat top = 0.0;
     CGFloat bottom = 0.0;
 
     /*
-     * DỌC:
+     * PORTRAIT
      *
-     * Cắt trên 34px
-     * Cắt dưới 34px
+     * Cắt trên + dưới.
      */
     if (height > width)
     {
-        top =
-            SC16_CROP;
-
-        bottom =
-            SC16_CROP;
+        top = crop;
+        bottom = crop;
     }
+
     /*
-     * NGANG:
+     * LANDSCAPE
      *
-     * Cắt trái 34px
-     * Cắt phải 34px
+     * Cắt trái + phải.
      */
     else
     {
-        left =
-            SC16_CROP;
-
-        right =
-            SC16_CROP;
+        left = crop;
+        right = crop;
     }
 
     CGFloat visibleWidth =
@@ -290,19 +244,15 @@ static void SC16ApplyCrop(UIWindow *window)
     }
 
     /*
-     * Xóa mask cũ.
+     * Chỉ mask layer để crop.
+     *
+     * KHÔNG transform UIWindow.
      */
-    window.layer.mask = nil;
+    CALayer *layer =
+        window.layer;
 
-    /*
-     * Không thay đổi geometry của UIWindow.
-     */
-    window.transform =
-        CGAffineTransformIdentity;
+    layer.mask = nil;
 
-    /*
-     * Vùng hiển thị sau crop.
-     */
     CGRect visibleRect =
         CGRectMake(
             CGRectGetMinX(bounds) + left,
@@ -328,14 +278,136 @@ static void SC16ApplyCrop(UIWindow *window)
 
     CGPathRelease(path);
 
-    /*
-     * Crop bằng layer mask.
-     */
-    window.layer.mask =
+    layer.mask =
         mask;
 }
 
-#pragma mark - Apply
+#pragma mark - UI Shift
+
+/*
+ * Dịch ROOT UI, không dịch UIWindow.
+ *
+ * Vì crop nằm trên window.layer,
+ * root view được dịch bên trong vùng crop.
+ *
+ * Portrait:
+ *   Y - 10
+ *
+ * Landscape:
+ *   X - 10
+ */
+static void SC16ApplyUIShift(UIWindow *window)
+{
+    if (!SC16Enabled())
+        return;
+
+    if (SC16ShouldSkipWindow(window))
+        return;
+
+    UIView *rootView =
+        window.rootViewController.view;
+
+    if (!rootView)
+        return;
+
+    /*
+     * Không thay đổi frame/bounds.
+     * Chỉ dịch nội dung UI.
+     */
+    CGAffineTransform transform =
+        CGAffineTransformIdentity;
+
+    if (SC16IsLandscapeWindow(window))
+    {
+        transform =
+            CGAffineTransformMakeTranslation(
+                -SC16_UI_SHIFT,
+                0.0
+            );
+    }
+    else
+    {
+        transform =
+            CGAffineTransformMakeTranslation(
+                0.0,
+                -SC16_UI_SHIFT
+            );
+    }
+
+    rootView.transform =
+        transform;
+}
+
+#pragma mark - Multitasking Detection
+
+static BOOL SC16IsMultitaskingView(UIView *view)
+{
+    if (!view)
+        return NO;
+
+    NSString *name =
+        NSStringFromClass(view.class);
+
+    if ([name containsString:@"Switcher"])
+        return YES;
+
+    if ([name containsString:@"SBAppSwitcher"])
+        return YES;
+
+    if ([name containsString:@"SBFluidSwitcher"])
+        return YES;
+
+    if ([name containsString:@"FluidSwitcher"])
+        return YES;
+
+    if ([name containsString:@"Multitasking"])
+        return YES;
+
+    if ([name containsString:@"AppSwitcher"])
+        return YES;
+
+    return NO;
+}
+
+#pragma mark - Multitasking Corner
+
+/*
+ * Chỉ ép corner của view đa nhiệm.
+ *
+ * Không áp dụng cho app window bình thường.
+ */
+static void SC16ApplyMultitaskingCorner(UIView *view)
+{
+    if (!SC16Enabled())
+        return;
+
+    if (!SC16IsMultitaskingView(view))
+        return;
+
+    CALayer *layer =
+        view.layer;
+
+    if (!layer)
+        return;
+
+    layer.cornerRadius =
+        SC16_MULTITASK_CORNER;
+
+    /*
+     * Đảm bảo cornerRadius = 0
+     * thực sự không tạo clipping bo góc.
+     */
+    if (SC16_MULTITASK_CORNER <= 0.0)
+    {
+        layer.masksToBounds = NO;
+    }
+    else
+    {
+        layer.masksToBounds = YES;
+    }
+}
+
+#pragma mark - Apply Window
 
 static void SC16ApplyWindow(UIWindow *window)
 {
@@ -346,19 +418,16 @@ static void SC16ApplyWindow(UIWindow *window)
         return;
 
     /*
-     * Crop.
+     * Thứ tự quan trọng:
+     *
+     * 1. Crop window.
+     * 2. Dịch root UI.
+     *
+     * Không transform UIWindow.
      */
     SC16ApplyCrop(window);
 
-    /*
-     * Dịch UI.
-     */
     SC16ApplyUIShift(window);
-
-    /*
-     * UI đa nhiệm.
-     */
-    SC16ApplyMultitaskingCorner(window);
 }
 
 #pragma mark - Scene
@@ -416,13 +485,10 @@ static void SC16ApplyAllScenes(void)
     }
 }
 
-#pragma mark - UIWindow Hooks
+#pragma mark - Window Hooks
 
 %hook UIWindow
 
-/*
- * Window mới hiển thị.
- */
 - (void)makeKeyAndVisible
 {
     %orig;
@@ -436,17 +502,11 @@ static void SC16ApplyAllScenes(void)
     dispatch_async(
         dispatch_get_main_queue(),
         ^{
-            if (!window)
-                return;
-
             SC16ApplyWindow(window);
         }
     );
 }
 
-/*
- * Window xuất hiện.
- */
 - (void)setHidden:(BOOL)hidden
 {
     %orig(hidden);
@@ -476,6 +536,45 @@ static void SC16ApplyAllScenes(void)
 
 %end
 
+#pragma mark - UIView Hooks
+
+/*
+ * Hook UIView để bắt view/card của App Switcher.
+ *
+ * Không sửa geometry của các view khác.
+ */
+%hook UIView
+
+- (void)didMoveToWindow
+{
+    %orig;
+
+    if (!SC16Enabled())
+        return;
+
+    UIView *view =
+        self;
+
+    dispatch_async(
+        dispatch_get_main_queue(),
+        ^{
+            SC16ApplyMultitaskingCorner(view);
+        }
+    );
+}
+
+- (void)layoutSubviews
+{
+    %orig;
+
+    if (!SC16Enabled())
+        return;
+
+    SC16ApplyMultitaskingCorner(self);
+}
+
+%end
+
 #pragma mark - Constructor
 
 %ctor
@@ -494,7 +593,7 @@ static void SC16ApplyAllScenes(void)
                     dispatch_time(
                         DISPATCH_TIME_NOW,
                         (int64_t)(
-                            0.25 *
+                            0.50 *
                             NSEC_PER_SEC
                         )
                     ),
