@@ -1,4 +1,4 @@
-name: Build ScreenCrop16
+name: Build ScreenCrop16 - Roothide
 
 on:
   workflow_dispatch:
@@ -25,7 +25,10 @@ jobs:
             perl \
             fakeroot \
             rsync \
-            xz-utils
+            xz-utils \
+            lzma \
+            unzip \
+            dpkg
 
       - name: Install roothide Theos
         shell: bash
@@ -42,7 +45,41 @@ jobs:
 
           echo "THEOS=$THEOS" >> "$GITHUB_ENV"
 
-      - name: Install iOS SDK
+      - name: Install Linux iOS arm64e toolchain
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          export THEOS="$HOME/theos"
+
+          mkdir -p "$THEOS/toolchain/linux/iphone"
+
+          curl -L \
+            https://github.com/sbingner/llvm-project/releases/download/v10.0.0-1/linux-ios-arm64e-clang-toolchain.tar.lzma \
+            -o /tmp/toolchain.tar.lzma
+
+          mkdir -p /tmp/toolchain
+
+          tar --lzma \
+            -xf /tmp/toolchain.tar.lzma \
+            -C /tmp/toolchain
+
+          find /tmp/toolchain -maxdepth 3 -type f | head -50
+
+          if [ -d /tmp/toolchain/ios-arm64e-clang-toolchain ]; then
+            cp -a \
+              /tmp/toolchain/ios-arm64e-clang-toolchain/. \
+              "$THEOS/toolchain/linux/iphone/"
+          else
+            cp -a \
+              /tmp/toolchain/. \
+              "$THEOS/toolchain/linux/iphone/"
+          fi
+
+          chmod +x \
+            "$THEOS/toolchain/linux/iphone/bin/"* || true
+
+      - name: Install iOS 16.5 SDK
         shell: bash
         run: |
           set -euxo pipefail
@@ -51,39 +88,32 @@ jobs:
 
           mkdir -p "$THEOS/sdks"
 
-          git clone --depth 1 \
-            https://github.com/theos/sdks.git \
-            /tmp/sdks
+          curl -L \
+            https://github.com/theos/sdks/releases/latest/download/iPhoneOS16.5.sdk.tar.xz \
+            -o /tmp/iPhoneOS16.5.sdk.tar.xz
 
-          echo "Available SDKs:"
-          find /tmp/sdks -maxdepth 1 -type d -name "*.sdk" -print
+          file /tmp/iPhoneOS16.5.sdk.tar.xz
 
-          if [ ! -d "/tmp/sdks/iPhoneOS16.5.sdk" ]; then
-            echo "ERROR: iPhoneOS16.5.sdk is unavailable in the current SDK repository."
-            exit 1
-          fi
+          tar -xJf \
+            /tmp/iPhoneOS16.5.sdk.tar.xz \
+            -C "$THEOS/sdks"
 
-          cp -R \
-            "/tmp/sdks/iPhoneOS16.5.sdk" \
-            "$THEOS/sdks/"
-
-      - name: Verify
+      - name: Verify toolchain and SDK
         shell: bash
         run: |
           set -euxo pipefail
 
           export THEOS="$HOME/theos"
 
-          echo "Theos:"
-          git -C "$THEOS" remote -v
+          echo "=== Toolchain ==="
+          ls -la "$THEOS/toolchain/linux/iphone/bin/"
+          test -x "$THEOS/toolchain/linux/iphone/bin/clang"
 
-          echo "Roothide:"
-          test -d "$THEOS/vendor/mod/roothide"
+          echo "=== SDK ==="
+          ls -ld "$THEOS/sdks/"*.sdk
 
-          echo "SDK:"
-          test -d "$THEOS/sdks/iPhoneOS16.5.sdk"
-
-          ls -ld "$THEOS/sdks/iPhoneOS16.5.sdk"
+          echo "=== Clang ==="
+          "$THEOS/toolchain/linux/iphone/bin/clang" --version
 
       - name: Build
         shell: bash
@@ -97,6 +127,14 @@ jobs:
           make package \
             FINALPACKAGE=1 \
             THEOS_PACKAGE_SCHEME=roothide
+
+      - name: Inspect package
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          ls -lh packages/*.deb
+          dpkg-deb -I packages/*.deb
 
       - name: Upload DEB
         uses: actions/upload-artifact@v4
