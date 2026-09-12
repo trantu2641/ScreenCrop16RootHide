@@ -11,21 +11,69 @@ static BOOL SC16Enabled(void)
     return [version hasPrefix:@"16."];
 }
 
-static void SC16ApplyCrop(UIWindow *window)
+static BOOL SC16ShouldSkipWindow(UIWindow *window)
 {
     if (!window)
-        return;
+        return YES;
 
+    if (window.hidden)
+        return YES;
+
+    if (window.alpha <= 0.0)
+        return YES;
+
+    NSString *name =
+        NSStringFromClass(window.class);
+
+    /*
+     * Không đụng keyboard.
+     */
+    if ([name containsString:@"UITextEffectsWindow"])
+        return YES;
+
+    if ([name containsString:@"UIRemoteKeyboardWindow"])
+        return YES;
+
+    if ([name containsString:@"Keyboard"])
+        return YES;
+
+    /*
+     * Không đụng status bar window.
+     */
+    if ([name containsString:@"StatusBar"])
+        return YES;
+
+    if ([name containsString:@"_UIStatusBar"])
+        return YES;
+
+    return NO;
+}
+
+static void SC16ApplyCrop(UIWindow *window)
+{
     if (!SC16Enabled())
         return;
 
-    if (window.hidden)
+    if (SC16ShouldSkipWindow(window))
         return;
 
-    if (window.alpha <= 0.0)
+    /*
+     * Không crop window đặc biệt.
+     */
+    UIViewController *root =
+        window.rootViewController;
+
+    if (!root)
         return;
 
-    CGRect bounds = window.bounds;
+    UIView *view =
+        root.view;
+
+    if (!view)
+        return;
+
+    CGRect bounds =
+        view.bounds;
 
     CGFloat width =
         CGRectGetWidth(bounds);
@@ -36,14 +84,21 @@ static void SC16ApplyCrop(UIWindow *window)
     if (width <= 0.0 || height <= 0.0)
         return;
 
+    /*
+     * Xóa mask cũ.
+     */
+    view.layer.mask = nil;
+
     CGFloat left = 0.0;
     CGFloat right = 0.0;
     CGFloat top = 0.0;
     CGFloat bottom = 0.0;
 
     /*
-     * DỌC:
-     * crop 34 trên + 34 dưới.
+     * DỌC
+     *
+     * Crop 34 trên
+     * Crop 34 dưới
      */
     if (height > width)
     {
@@ -51,8 +106,10 @@ static void SC16ApplyCrop(UIWindow *window)
         bottom = SC16_CROP;
     }
     /*
-     * NGANG:
-     * crop 34 trái + 34 phải.
+     * NGANG
+     *
+     * Crop 34 trái
+     * Crop 34 phải
      */
     else
     {
@@ -71,21 +128,15 @@ static void SC16ApplyCrop(UIWindow *window)
         return;
 
     /*
-     * Xóa mask cũ.
-     */
-    window.layer.mask = nil;
-
-    /*
-     * TUYỆT ĐỐI KHÔNG:
+     * Vùng content được phép render.
      *
-     * window.transform
-     * window.frame
-     * window.bounds
-     * window.center
+     * Không thay đổi:
      *
-     * Không dịch UI.
+     * frame
+     * bounds
+     * center
+     * transform
      */
-
     CGRect visibleRect =
         CGRectMake(
             CGRectGetMinX(bounds) + left,
@@ -97,7 +148,8 @@ static void SC16ApplyCrop(UIWindow *window)
     CAShapeLayer *mask =
         [CAShapeLayer layer];
 
-    mask.frame = bounds;
+    mask.frame =
+        bounds;
 
     CGPathRef path =
         CGPathCreateWithRect(
@@ -105,14 +157,16 @@ static void SC16ApplyCrop(UIWindow *window)
             NULL
         );
 
-    mask.path = path;
+    mask.path =
+        path;
 
     CGPathRelease(path);
 
     /*
-     * Chỉ clipping phần ngoài.
+     * Chỉ crop root content.
      */
-    window.layer.mask = mask;
+    view.layer.mask =
+        mask;
 }
 
 static void SC16ApplyAllScenes(void)
@@ -132,17 +186,17 @@ static void SC16ApplyAllScenes(void)
             continue;
         }
 
-        UIWindowScene *windowScene =
+        UIWindowScene *sceneWindow =
             (UIWindowScene *)scene;
 
-        if (windowScene.activationState ==
+        if (sceneWindow.activationState ==
             UISceneActivationStateUnattached)
         {
             continue;
         }
 
         for (UIWindow *window
-             in windowScene.windows)
+             in sceneWindow.windows)
         {
             SC16ApplyCrop(window);
         }
