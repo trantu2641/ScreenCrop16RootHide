@@ -2,9 +2,6 @@ name: Build ScreenCrop16 - Roothide
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
 
 jobs:
   build:
