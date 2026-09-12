@@ -1,260 +1,341 @@
 #import <UIKit/UIKit.h>
 #import <QuartzCore/QuartzCore.h>
-#import <objc/runtime.h>
 
 #pragma mark - Configuration
 
-static const CGFloat SC16_CROP = 34.0;
-static const CGFloat SC16_MULTITASK_RADIUS = 2.0;
+static CGFloat const SC16_CROP = 34.0;
+static CGFloat const SC16_MULTITASK_RADIUS = 2.0;
 
-#pragma mark - Runtime
+#pragma mark - Helpers
 
-static BOOL SC16IsIOS16(void) {
-    NSOperatingSystemVersion version =
-        NSProcessInfo.processInfo.operatingSystemVersion;
+static BOOL SC16Enabled(void)
+{
+    /*
+     * Không giới hạn riêng 16.4 nữa.
+     * Tweak hoạt động trên iOS 16.x.
+     */
+    NSString *version = UIDevice.currentDevice.systemVersion;
 
-    return version.majorVersion == 16;
-}
-
-static BOOL SC16ExcludedWindow(UIWindow *window) {
-    if (!window)
-        return YES;
-
-    NSString *className =
-        NSStringFromClass(window.class);
-
-    static NSArray<NSString *> *excludedClasses;
-
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        excludedClasses = @[
-            @"UITextEffectsWindow",
-            @"UIRemoteKeyboardWindow",
-            @"_UIRemoteKeyboardWindow",
-            @"UIStatusBarWindow",
-            @"_UIStatusBarWindow",
-            @"StatusBar",
-            @"Keyboard",
-            @"TextEffects",
-            @"Notification",
-            @"ControlCenter",
-            @"SBControlCenter",
-            @"SBNotification"
-        ];
-    });
-
-    for (NSString *name in excludedClasses) {
-        if ([className rangeOfString:name
-                             options:NSCaseInsensitiveSearch].location != NSNotFound) {
-            return YES;
-        }
-    }
-
-    return NO;
-}
-
-static BOOL SC16UsableWindow(UIWindow *window) {
-    if (!window)
-        return NO;
-
-    if (window.hidden)
-        return NO;
-
-    if (window.alpha <= 0.0)
-        return NO;
-
-    if (SC16ExcludedWindow(window))
+    if (![version hasPrefix:@"16."])
         return NO;
 
     return YES;
 }
 
-#pragma mark - Crop Geometry
+static BOOL SC16IsKeyboardWindow(UIWindow *window)
+{
+    if (!window)
+        return YES;
 
-/*
- * Crop 34px ở hai đầu theo chiều DÀI của nội dung.
- *
- * Portrait:
- *
- *     1284 x 2778
- *
- *     trên  = 34
- *     dưới  = 34
- *
- * Landscape:
- *
- *     2778 x 1284
- *
- *     trái  = 34
- *     phải  = 34
- *
- * Không scale.
- * Không transform.
- * Không làm thay đổi aspect ratio.
- */
-static CGRect SC16CropRect(UIWindow *window) {
-    CGRect bounds = window.bounds;
+    NSString *className = NSStringFromClass(window.class);
 
-    CGFloat width =
-        CGRectGetWidth(bounds);
+    if ([className containsString:@"UITextEffectsWindow"])
+        return YES;
 
-    CGFloat height =
-        CGRectGetHeight(bounds);
+    if ([className containsString:@"UIRemoteKeyboardWindow"])
+        return YES;
 
-    if (width <= 0.0 || height <= 0.0)
-        return CGRectZero;
+    if ([className containsString:@"Keyboard"])
+        return YES;
 
-    BOOL landscape =
-        width > height;
-
-    if (!landscape) {
-
-        CGFloat newHeight =
-            height - (SC16_CROP * 2.0);
-
-        if (newHeight <= 0.0)
-            return CGRectZero;
-
-        return CGRectMake(
-            CGRectGetMinX(bounds),
-            CGRectGetMinY(bounds) + SC16_CROP,
-            width,
-            newHeight
-        );
-    }
-
-    CGFloat newWidth =
-        width - (SC16_CROP * 2.0);
-
-    if (newWidth <= 0.0)
-        return CGRectZero;
-
-    return CGRectMake(
-        CGRectGetMinX(bounds) + SC16_CROP,
-        CGRectGetMinY(bounds),
-        newWidth,
-        height
-    );
+    return NO;
 }
 
-#pragma mark - Root View Crop
+static BOOL SC16IsStatusBarWindow(UIWindow *window)
+{
+    if (!window)
+        return YES;
 
-static const void *SC16AppliedKey =
-    &SC16AppliedKey;
+    NSString *className = NSStringFromClass(window.class);
 
-static void SC16ApplyRootView(UIWindow *window) {
-    if (!SC16IsIOS16())
-        return;
+    if ([className containsString:@"StatusBar"])
+        return YES;
 
-    if (!SC16UsableWindow(window))
-        return;
+    if ([className containsString:@"_UIStatusBar"])
+        return YES;
 
-    UIViewController *rootViewController =
-        window.rootViewController;
+    return NO;
+}
 
-    if (!rootViewController)
-        return;
+static BOOL SC16ShouldIgnoreWindow(UIWindow *window)
+{
+    if (!window)
+        return YES;
 
-    UIView *rootView =
-        rootViewController.view;
+    if (window.hidden)
+        return YES;
 
-    if (!rootView)
-        return;
-
-    if (rootView.superview != window)
-        return;
-
-    CGRect cropRect =
-        SC16CropRect(window);
-
-    if (CGRectIsEmpty(cropRect))
-        return;
-
-    CGRect windowBounds =
-        window.bounds;
+    if (window.alpha <= 0.0)
+        return YES;
 
     /*
-     * Đánh dấu root view đã được xử lý.
+     * Không đụng keyboard.
      */
-    objc_setAssociatedObject(
-        rootView,
-        SC16AppliedKey,
-        @YES,
-        OBJC_ASSOCIATION_RETAIN_NONATOMIC
-    );
+    if (SC16IsKeyboardWindow(window))
+        return YES;
+
+    /*
+     * Không đụng trực tiếp status bar window.
+     */
+    if (SC16IsStatusBarWindow(window))
+        return YES;
+
+    return NO;
+}
+
+#pragma mark - Crop
+
+static void SC16RemoveCrop(UIWindow *window)
+{
+    if (!window)
+        return;
+
+    window.layer.mask = nil;
+    window.layer.cornerRadius = 0.0;
+    window.layer.masksToBounds = NO;
+
+    /*
+     * Tuyệt đối không thay đổi transform.
+     */
+    window.transform = CGAffineTransformIdentity;
+}
+
+static void SC16ApplyRealCrop(UIWindow *window)
+{
+    if (!SC16Enabled())
+        return;
+
+    if (SC16ShouldIgnoreWindow(window))
+        return;
+
+    UIScreen *screen = window.screen;
+
+    if (!screen)
+        screen = UIScreen.mainScreen;
+
+    CGRect screenBounds = screen.bounds;
+
+    CGFloat screenWidth = CGRectGetWidth(screenBounds);
+    CGFloat screenHeight = CGRectGetHeight(screenBounds);
+
+    if (screenWidth <= 0.0 || screenHeight <= 0.0)
+        return;
+
+    CGFloat windowWidth = CGRectGetWidth(window.bounds);
+    CGFloat windowHeight = CGRectGetHeight(window.bounds);
+
+    if (windowWidth <= 0.0 || windowHeight <= 0.0)
+        return;
 
     /*
      * QUAN TRỌNG:
      *
-     * Không thay đổi:
-     *     window.bounds
-     *     window.frame
-     *     window.transform
+     * Không sửa window.bounds.
+     * Không sửa frame.
+     * Không scale.
      *
-     * Chỉ thay đổi viewport của root view.
+     * Chỉ clip phần render bằng layer mask.
      */
-    rootView.frame = cropRect;
 
-    rootView.center =
-        CGPointMake(
-            CGRectGetMidX(windowBounds),
-            CGRectGetMidY(windowBounds)
-        );
+    window.transform = CGAffineTransformIdentity;
+
+    BOOL landscape =
+        windowWidth > windowHeight;
+
+    CGFloat leftCrop = 0.0;
+    CGFloat rightCrop = 0.0;
+    CGFloat topCrop = 0.0;
+    CGFloat bottomCrop = 0.0;
+
+    if (!landscape) {
+
+        /*
+         * PORTRAIT
+         *
+         * 1284 x 2778
+         *
+         * Cắt:
+         * trên 34
+         * dưới 34
+         *
+         * Giữ nguyên toàn bộ chiều ngang.
+         */
+        topCrop = SC16_CROP;
+        bottomCrop = SC16_CROP;
+
+    } else {
+
+        /*
+         * LANDSCAPE
+         *
+         * 2778 x 1284
+         *
+         * Không cắt chiều 1248/1284.
+         *
+         * Chuyển vùng crop sang hai đầu
+         * của cạnh dài 2778.
+         *
+         * => trái 34
+         * => phải 34
+         *
+         * Nhờ vậy Control Centre / notification
+         * ở cạnh ngắn không bị cắt.
+         */
+        leftCrop = SC16_CROP;
+        rightCrop = SC16_CROP;
+    }
+
+    CGFloat visibleWidth =
+        windowWidth - leftCrop - rightCrop;
+
+    CGFloat visibleHeight =
+        windowHeight - topCrop - bottomCrop;
+
+    if (visibleWidth <= 0.0 || visibleHeight <= 0.0)
+        return;
 
     /*
-     * Phần ngoài viewport bị clip thật
-     * thay vì phủ bằng một view đen.
+     * CAShapeLayer dùng làm CLIP MASK.
+     *
+     * Đây không phải overlay màu đen.
+     * Pixel nằm ngoài vùng này thực sự không được
+     * render ra UIWindow.
      */
-    rootView.clipsToBounds = YES;
-    rootView.layer.masksToBounds = YES;
+    CAShapeLayer *mask = [CAShapeLayer layer];
 
-    [rootView setNeedsLayout];
+    CGRect maskRect = CGRectMake(
+        leftCrop,
+        topCrop,
+        visibleWidth,
+        visibleHeight
+    );
+
+    mask.frame = window.bounds;
+
+    CGPathRef path =
+        CGPathCreateWithRect(maskRect, NULL);
+
+    mask.path = path;
+
+    CGPathRelease(path);
+
+    mask.fillRule = kCAFillRuleNonZero;
+
+    window.layer.mask = mask;
+}
+
+#pragma mark - Multitasking corner
+
+static BOOL SC16LooksLikeMultitaskingWindow(UIWindow *window)
+{
+    if (!window)
+        return NO;
+
+    NSString *className =
+        NSStringFromClass(window.class);
+
+    /*
+     * Chỉ dùng để nhận diện các container
+     * thường xuất hiện trong UI đa nhiệm.
+     *
+     * Không ép toàn bộ UIWindow.cornerRadius.
+     */
+    if ([className containsString:@"SB"])
+        return YES;
+
+    if ([className containsString:@"Switcher"])
+        return YES;
+
+    if ([className containsString:@"Multitasking"])
+        return YES;
+
+    if ([className containsString:@"Card"])
+        return YES;
+
+    return NO;
+}
+
+static void SC16ApplyMultitaskCorner(UIWindow *window)
+{
+    if (!window)
+        return;
+
+    if (!SC16LooksLikeMultitaskingWindow(window))
+        return;
+
+    /*
+     * Giữ góc gần vuông như bản đầu:
+     * 2.0 px.
+     */
+    window.layer.cornerRadius =
+        SC16_MULTITASK_RADIUS;
+
+    window.layer.masksToBounds = YES;
 }
 
 #pragma mark - Window
 
-static void SC16ApplyWindow(UIWindow *window) {
-    if (!SC16IsIOS16())
+static void SC16ApplyWindow(UIWindow *window)
+{
+    if (!window)
         return;
 
-    if (!SC16UsableWindow(window))
+    if (!SC16Enabled())
         return;
 
-    SC16ApplyRootView(window);
+    if (SC16ShouldIgnoreWindow(window))
+        return;
+
+    /*
+     * Crop thật bằng mask.
+     */
+    SC16ApplyRealCrop(window);
+
+    /*
+     * Góc multitasking gần vuông.
+     *
+     * Không áp dụng corner cho toàn bộ app window,
+     * tránh làm app bị bo góc ngoài ý muốn.
+     */
+    SC16ApplyMultitaskCorner(window);
 }
 
-static void SC16ApplyScene(UIWindowScene *scene) {
-    if (!SC16IsIOS16())
-        return;
+#pragma mark - Scene
 
+static void SC16ApplyScene(UIWindowScene *scene)
+{
     if (!scene)
         return;
 
-    if (scene.activationState ==
-        UISceneActivationStateUnattached) {
+    if (!SC16Enabled())
         return;
-    }
 
-    /*
-     * Dùng UIWindowScene.windows.
-     * Không dùng UIApplication.windows.
-     */
-    NSArray<UIWindow *> *windows =
-        scene.windows;
+    NSArray<UIWindow *> *windows = scene.windows;
 
     for (UIWindow *window in windows) {
+
+        if (!window)
+            continue;
+
+        if (window.hidden)
+            continue;
+
         SC16ApplyWindow(window);
     }
 }
 
-static void SC16ApplyAllScenes(void) {
-    if (!SC16IsIOS16())
+static void SC16ApplyAllScenes(void)
+{
+    if (!SC16Enabled())
         return;
 
     UIApplication *application =
         UIApplication.sharedApplication;
 
-    for (UIScene *scene in application.connectedScenes) {
+    NSSet<UIScene *> *scenes =
+        application.connectedScenes;
+
+    for (UIScene *scene in scenes) {
 
         if (![scene isKindOfClass:[UIWindowScene class]])
             continue;
@@ -262,227 +343,131 @@ static void SC16ApplyAllScenes(void) {
         UIWindowScene *windowScene =
             (UIWindowScene *)scene;
 
+        if (windowScene.activationState ==
+            UISceneActivationStateUnattached)
+            continue;
+
         SC16ApplyScene(windowScene);
     }
 }
 
-static void SC16ScheduleReapply(UIWindow *window) {
-    if (!window)
+#pragma mark - Rotation
+
+static void SC16ReapplyAfterRotation(void)
+{
+    if (!SC16Enabled())
+        return;
+
+    /*
+     * Không sửa bounds/frame trong lúc UIKit đang
+     * transition rotation.
+     *
+     * Chờ rotation hoàn tất rồi thay mask.
+     */
+    dispatch_async(
+        dispatch_get_main_queue(),
+        ^{
+            SC16ApplyAllScenes();
+
+            dispatch_async(
+                dispatch_get_main_queue(),
+                ^{
+                    SC16ApplyAllScenes();
+                }
+            );
+        }
+    );
+}
+
+#pragma mark - UIWindow Hook
+
+%hook UIWindow
+
+- (void)makeKeyAndVisible
+{
+    %orig;
+
+    if (!SC16Enabled())
         return;
 
     dispatch_async(
         dispatch_get_main_queue(),
         ^{
-            if (!SC16IsIOS16())
-                return;
-
-            if (!SC16UsableWindow(window))
-                return;
-
-            SC16ApplyWindow(window);
+            SC16ApplyWindow(self);
         }
     );
 }
 
-#pragma mark - UIWindow Hooks
-
-%hook UIWindow
-
-- (void)makeKeyAndVisible {
-    %orig;
-
-    if (!SC16IsIOS16())
-        return;
-
-    SC16ScheduleReapply(self);
-}
-
-- (void)setHidden:(BOOL)hidden {
+- (void)setHidden:(BOOL)hidden
+{
     %orig(hidden);
 
-    if (!SC16IsIOS16())
+    if (!SC16Enabled())
         return;
 
     if (hidden)
         return;
 
-    SC16ScheduleReapply(self);
+    dispatch_async(
+        dispatch_get_main_queue(),
+        ^{
+            SC16ApplyWindow(self);
+        }
+    );
 }
 
-- (void)setRootViewController:(UIViewController *)rootViewController {
-    %orig(rootViewController);
+- (void)setFrame:(CGRect)frame
+{
+    %orig(frame);
 
-    if (!SC16IsIOS16())
-        return;
-
-    SC16ScheduleReapply(self);
-}
-
-- (void)didMoveToWindow {
-    %orig;
-
-    if (!SC16IsIOS16())
-        return;
-
-    SC16ScheduleReapply(self);
-}
-
-%end
-
-#pragma mark - Root View Layout
-
-%hook UIView
-
-- (void)layoutSubviews {
-    %orig;
-
-    if (!SC16IsIOS16())
-        return;
-
-    UIWindow *window =
-        self.window;
-
-    if (!window)
-        return;
-
-    if (!SC16UsableWindow(window))
-        return;
-
-    UIViewController *rootViewController =
-        window.rootViewController;
-
-    if (!rootViewController)
-        return;
-
-    UIView *rootView =
-        rootViewController.view;
-
-    if (!rootView)
-        return;
-
-    if (self != rootView)
+    if (!SC16Enabled())
         return;
 
     /*
-     * Chỉ xử lý root view đã được crop.
+     * Không thay đổi frame.
+     * Chỉ re-apply mask sau layout.
      */
-    NSNumber *applied =
-        objc_getAssociatedObject(
-            rootView,
-            SC16AppliedKey
-        );
+    dispatch_async(
+        dispatch_get_main_queue(),
+        ^{
+            if (!self.hidden)
+                SC16ApplyWindow(self);
+        }
+    );
+}
 
-    if (![applied boolValue])
+- (void)setBounds:(CGRect)bounds
+{
+    %orig(bounds);
+
+    if (!SC16Enabled())
         return;
-
-    CGRect cropRect =
-        SC16CropRect(window);
-
-    if (CGRectIsEmpty(cropRect))
-        return;
-
-    CGRect windowBounds =
-        window.bounds;
 
     /*
-     * UIKit có thể reset frame khi rotation/layout.
-     * Đưa root view trở lại viewport crop.
+     * Rotation / UIKit layout có thể thay bounds.
      *
-     * Không scale.
-     * Không transform.
+     * Không can thiệp vào bounds.
+     * Chỉ cập nhật lại mask theo kích thước mới.
      */
-    if (!CGRectEqualToRect(
-            rootView.frame,
-            cropRect)) {
-
-        rootView.frame =
-            cropRect;
-
-        rootView.center =
-            CGPointMake(
-                CGRectGetMidX(windowBounds),
-                CGRectGetMidY(windowBounds)
-            );
-    }
-
-    rootView.clipsToBounds = YES;
-    rootView.layer.masksToBounds = YES;
+    dispatch_async(
+        dispatch_get_main_queue(),
+        ^{
+            if (!self.hidden)
+                SC16ApplyWindow(self);
+        }
+    );
 }
-
-%end
-
-#pragma mark - SpringBoard App Switcher
-
-@interface SBAppSwitcherPageView : UIView
-
-@property(nonatomic, assign)
-CGFloat cornerRadius;
-
-@end
-
-%group SpringBoardSwitcher
-
-%hook SBAppSwitcherPageView
-
-- (void)setCornerRadius:(CGFloat)radius {
-    %orig(SC16_MULTITASK_RADIUS);
-}
-
-- (void)layoutSubviews {
-    %orig;
-
-    self.layer.cornerRadius =
-        SC16_MULTITASK_RADIUS;
-
-    self.layer.masksToBounds = YES;
-}
-
-%end
 
 %end
 
 #pragma mark - Constructor
 
-%ctor {
+%ctor
+{
     @autoreleasepool {
 
-        if (!SC16IsIOS16())
+        if (!SC16Enabled())
             return;
-
-        NSString *processName =
-            NSProcessInfo.processInfo.processName;
-
-        /*
-         * SpringBoard:
-         *
-         * Chỉ xử lý App Switcher.
-         *
-         * Không crop UIWindow của SpringBoard,
-         * tránh phá:
-         *
-         * - Status Bar
-         * - Control Centre
-         * - Notification
-         * - Lock Screen
-         */
-        if ([processName isEqualToString:@"SpringBoard"]) {
-
-            %init(SpringBoardSwitcher);
-
-            return;
-        }
-
-        /*
-         * QUAN TRỌNG:
-         *
-         * Khởi tạo toàn bộ hook không nằm trong
-         * %group.
-         *
-         * Đây là phần sửa lỗi:
-         *
-         * non-initialized hook group: _ungrouped
-         */
-        %init;
 
         /*
          * Initial apply.
@@ -494,17 +479,14 @@ CGFloat cornerRadius;
             }
         );
 
-        NSNotificationCenter *center =
-            NSNotificationCenter.defaultCenter;
-
         /*
          * App active.
          */
-        [center
+        [[NSNotificationCenter defaultCenter]
             addObserverForName:
                 UIApplicationDidBecomeActiveNotification
             object:nil
-            queue:NSOperationQueue.mainQueue
+            queue:[NSOperationQueue mainQueue]
             usingBlock:
             ^(__unused NSNotification *notification) {
 
@@ -514,11 +496,11 @@ CGFloat cornerRadius;
         /*
          * Scene active.
          */
-        [center
+        [[NSNotificationCenter defaultCenter]
             addObserverForName:
                 UISceneDidActivateNotification
             object:nil
-            queue:NSOperationQueue.mainQueue
+            queue:[NSOperationQueue mainQueue]
             usingBlock:
             ^(NSNotification *notification) {
 
@@ -526,9 +508,8 @@ CGFloat cornerRadius;
                     notification.object;
 
                 if (![scene
-                    isKindOfClass:[UIWindowScene class]]) {
+                        isKindOfClass:[UIWindowScene class]])
                     return;
-                }
 
                 SC16ApplyScene(
                     (UIWindowScene *)scene
@@ -538,11 +519,11 @@ CGFloat cornerRadius;
         /*
          * Scene foreground.
          */
-        [center
+        [[NSNotificationCenter defaultCenter]
             addObserverForName:
                 UISceneWillEnterForegroundNotification
             object:nil
-            queue:NSOperationQueue.mainQueue
+            queue:[NSOperationQueue mainQueue]
             usingBlock:
             ^(NSNotification *notification) {
 
@@ -550,9 +531,8 @@ CGFloat cornerRadius;
                     notification.object;
 
                 if (![scene
-                    isKindOfClass:[UIWindowScene class]]) {
+                        isKindOfClass:[UIWindowScene class]])
                     return;
-                }
 
                 SC16ApplyScene(
                     (UIWindowScene *)scene
@@ -562,38 +542,20 @@ CGFloat cornerRadius;
         /*
          * Rotation.
          *
-         * Không dùng UIWindowSceneDidUpdateNotification
+         * Không dùng:
+         * UIWindowSceneDidUpdateNotification
+         *
          * vì SDK iOS 16.5 không có symbol này.
          */
-        [center
+        [[NSNotificationCenter defaultCenter]
             addObserverForName:
                 UIDeviceOrientationDidChangeNotification
             object:nil
-            queue:NSOperationQueue.mainQueue
+            queue:[NSOperationQueue mainQueue]
             usingBlock:
             ^(__unused NSNotification *notification) {
 
-                /*
-                 * Chờ UIKit hoàn thành rotation.
-                 */
-                dispatch_async(
-                    dispatch_get_main_queue(),
-                    ^{
-                        SC16ApplyAllScenes();
-
-                        /*
-                         * Một lần nữa ở frame kế tiếp,
-                         * phòng trường hợp UIKit vừa layout
-                         * lại root view.
-                         */
-                        dispatch_async(
-                            dispatch_get_main_queue(),
-                            ^{
-                                SC16ApplyAllScenes();
-                            }
-                        );
-                    }
-                );
+                SC16ReapplyAfterRotation();
             }];
     }
 }
