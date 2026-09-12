@@ -1,19 +1,7 @@
-make package THEOS_PACKAGE_SCHEME=roothide
-``` citeturn1view0
-
-
-### Sửa `build.yml`
-
-**Xóa toàn bộ workflow cũ** và thay bằng bản này:
-
-```yaml
-name: Build ScreenCrop16 - Roothide
+name: Build ScreenCrop16
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
 
 jobs:
   build:
@@ -26,82 +14,19 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            git \
-            curl \
-            clang \
-            make \
-            perl \
-            fakeroot \
-            rsync \
-            zip \
-            libxml2-utils \
-            xz-utils
+          sudo apt-get install -y git curl make clang perl fakeroot rsync xz-utils
 
       - name: Install roothide Theos
-        shell: bash
         run: |
-          set -euxo pipefail
-
-          export THEOS="$HOME/theos"
-
-          rm -rf "$THEOS"
-
-          git clone --recursive \
-            https://github.com/roothide/theos.git \
-            "$THEOS"
-
-          echo "THEOS=$THEOS" >> "$GITHUB_ENV"
-
-      - name: Install SDK
-        shell: bash
-        run: |
-          set -euxo pipefail
-
-          export THEOS="$HOME/theos"
-
-          "$THEOS/bin/install-sdk" 16.5
-
-      - name: Verify roothide Theos
-        shell: bash
-        run: |
-          set -euxo pipefail
-
-          export THEOS="$HOME/theos"
-
-          echo "Theos:"
-          git -C "$THEOS" remote -v
-
-          echo "Roothide module:"
-          ls -la "$THEOS/vendor/mod/roothide"
-
-          echo "SDK:"
-          ls -la "$THEOS/sdks"
-
-          test -d "$THEOS/vendor/mod/roothide"
+          git clone --recursive https://github.com/roothide/theos.git "$HOME/theos"
 
       - name: Build
-        shell: bash
         run: |
-          set -euxo pipefail
-
           export THEOS="$HOME/theos"
-
-          make clean
-
-          make package \
-            FINALPACKAGE=1 \
-            THEOS_PACKAGE_SCHEME=roothide
-
-      - name: Show package
-        shell: bash
-        run: |
-          find packages -type f -name "*.deb" -print
-          dpkg-deb -I packages/*.deb
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide
 
       - name: Upload DEB
         uses: actions/upload-artifact@v4
         with:
           name: ScreenCrop16-roothide
           path: packages/*.deb
-          if-no-files-found: error
