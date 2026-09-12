@@ -25,8 +25,7 @@ jobs:
             perl \
             fakeroot \
             rsync \
-            xz-utils \
-            unzip
+            xz-utils
 
       - name: Install roothide Theos
         shell: bash
@@ -43,7 +42,7 @@ jobs:
 
           echo "THEOS=$THEOS" >> "$GITHUB_ENV"
 
-      - name: Install iOS 16.5 SDK
+      - name: Install iOS SDK
         shell: bash
         run: |
           set -euxo pipefail
@@ -52,34 +51,41 @@ jobs:
 
           mkdir -p "$THEOS/sdks"
 
-          curl -L \
-            https://github.com/theos/sdks/releases/download/16.5-2/iPhoneOS16.5.sdk.tar.xz \
-            -o /tmp/iPhoneOS16.5.sdk.tar.xz
+          git clone --depth 1 \
+            https://github.com/theos/sdks.git \
+            /tmp/sdks
 
-          tar -xJf \
-            /tmp/iPhoneOS16.5.sdk.tar.xz \
-            -C "$THEOS/sdks"
+          echo "Available SDKs:"
+          find /tmp/sdks -maxdepth 1 -type d -name "*.sdk" -print
 
-          echo "Installed SDKs:"
-          ls -lah "$THEOS/sdks"
+          if [ ! -d "/tmp/sdks/iPhoneOS16.5.sdk" ]; then
+            echo "ERROR: iPhoneOS16.5.sdk is unavailable in the current SDK repository."
+            exit 1
+          fi
 
-      - name: Verify Theos and SDK
+          cp -R \
+            "/tmp/sdks/iPhoneOS16.5.sdk" \
+            "$THEOS/sdks/"
+
+      - name: Verify
         shell: bash
         run: |
           set -euxo pipefail
 
           export THEOS="$HOME/theos"
 
-          echo "THEOS = $THEOS"
           echo "Theos:"
           git -C "$THEOS" remote -v
 
-          echo "SDKs:"
-          ls -lah "$THEOS/sdks"
+          echo "Roothide:"
+          test -d "$THEOS/vendor/mod/roothide"
 
+          echo "SDK:"
           test -d "$THEOS/sdks/iPhoneOS16.5.sdk"
 
-      - name: Build ScreenCrop16
+          ls -ld "$THEOS/sdks/iPhoneOS16.5.sdk"
+
+      - name: Build
         shell: bash
         run: |
           set -euxo pipefail
@@ -91,12 +97,6 @@ jobs:
           make package \
             FINALPACKAGE=1 \
             THEOS_PACKAGE_SCHEME=roothide
-
-      - name: Show package
-        shell: bash
-        run: |
-          find packages -type f -name "*.deb" -print
-          dpkg-deb -I packages/*.deb
 
       - name: Upload DEB
         uses: actions/upload-artifact@v4
