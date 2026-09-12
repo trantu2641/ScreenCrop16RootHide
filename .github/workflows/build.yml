@@ -21,14 +21,11 @@ jobs:
             git \
             curl \
             make \
-            clang \
             perl \
             fakeroot \
             rsync \
             xz-utils \
-            lzma \
-            unzip \
-            dpkg
+            libio-compress-lzma-perl
 
       - name: Install roothide Theos
         shell: bash
@@ -38,46 +35,15 @@ jobs:
           export THEOS="$HOME/theos"
 
           rm -rf "$THEOS"
+          mkdir -p "$THEOS"
 
-          git clone --recursive \
-            https://github.com/roothide/theos.git \
-            "$THEOS"
+          curl -fsSL \
+            https://raw.githubusercontent.com/roothide/theos/master/bin/install-theos \
+            -o /tmp/install-theos.sh
+
+          bash /tmp/install-theos.sh
 
           echo "THEOS=$THEOS" >> "$GITHUB_ENV"
-
-      - name: Install Linux iOS arm64e toolchain
-        shell: bash
-        run: |
-          set -euxo pipefail
-
-          export THEOS="$HOME/theos"
-
-          mkdir -p "$THEOS/toolchain/linux/iphone"
-
-          curl -L \
-            https://github.com/sbingner/llvm-project/releases/download/v10.0.0-1/linux-ios-arm64e-clang-toolchain.tar.lzma \
-            -o /tmp/toolchain.tar.lzma
-
-          mkdir -p /tmp/toolchain
-
-          tar --lzma \
-            -xf /tmp/toolchain.tar.lzma \
-            -C /tmp/toolchain
-
-          find /tmp/toolchain -maxdepth 3 -type f | head -50
-
-          if [ -d /tmp/toolchain/ios-arm64e-clang-toolchain ]; then
-            cp -a \
-              /tmp/toolchain/ios-arm64e-clang-toolchain/. \
-              "$THEOS/toolchain/linux/iphone/"
-          else
-            cp -a \
-              /tmp/toolchain/. \
-              "$THEOS/toolchain/linux/iphone/"
-          fi
-
-          chmod +x \
-            "$THEOS/toolchain/linux/iphone/bin/"* || true
 
       - name: Install iOS 16.5 SDK
         shell: bash
@@ -88,32 +54,52 @@ jobs:
 
           mkdir -p "$THEOS/sdks"
 
-          curl -L \
-            https://github.com/theos/sdks/releases/latest/download/iPhoneOS16.5.sdk.tar.xz \
-            -o /tmp/iPhoneOS16.5.sdk.tar.xz
+          cd /tmp
 
-          file /tmp/iPhoneOS16.5.sdk.tar.xz
+          rm -rf theos-sdks
 
-          tar -xJf \
-            /tmp/iPhoneOS16.5.sdk.tar.xz \
-            -C "$THEOS/sdks"
+          git clone \
+            --depth=1 \
+            --filter=tree:0 \
+            --no-checkout \
+            https://github.com/theos/sdks.git \
+            theos-sdks
 
-      - name: Verify toolchain and SDK
+          cd theos-sdks
+
+          git sparse-checkout set --no-cone iPhoneOS16.5.sdk
+          git checkout
+
+          cp -R iPhoneOS16.5.sdk "$THEOS/sdks/"
+
+          echo "Installed SDK:"
+          ls -ld "$THEOS/sdks/iPhoneOS16.5.sdk"
+
+      - name: Verify toolchain
         shell: bash
         run: |
           set -euxo pipefail
 
           export THEOS="$HOME/theos"
 
+          echo "=== THEOS ==="
+          echo "$THEOS"
+
           echo "=== Toolchain ==="
           ls -la "$THEOS/toolchain/linux/iphone/bin/"
-          test -x "$THEOS/toolchain/linux/iphone/bin/clang"
 
-          echo "=== SDK ==="
-          ls -ld "$THEOS/sdks/"*.sdk
+          test -x "$THEOS/toolchain/linux/iphone/bin/clang"
+          test -x "$THEOS/toolchain/linux/iphone/bin/clang++"
 
           echo "=== Clang ==="
           "$THEOS/toolchain/linux/iphone/bin/clang" --version
+
+          echo "=== SDK ==="
+          test -d "$THEOS/sdks/iPhoneOS16.5.sdk"
+          ls -ld "$THEOS/sdks/iPhoneOS16.5.sdk"
+
+          echo "=== Roothide module ==="
+          test -d "$THEOS/vendor/mod/roothide"
 
       - name: Build
         shell: bash
@@ -128,12 +114,13 @@ jobs:
             FINALPACKAGE=1 \
             THEOS_PACKAGE_SCHEME=roothide
 
-      - name: Inspect package
+      - name: Check DEB
         shell: bash
         run: |
           set -euxo pipefail
 
-          ls -lh packages/*.deb
+          find packages -type f -name "*.deb" -print
+
           dpkg-deb -I packages/*.deb
 
       - name: Upload DEB
