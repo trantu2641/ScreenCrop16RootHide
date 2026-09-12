@@ -8,19 +8,6 @@ static BOOL SC16Enabled(void) {
     return [version hasPrefix:@"16.4"];
 }
 
-/*
- ScreenCrop16
-
- iPhone 11 Pro Max:
-   Native:  1284 × 2778
-   Crop:    60 px top + 60 px bottom
-   Visible: 1284 × 2658
-
- Không scale màn hình.
- Không dùng CGAffineTransformScale().
- Không đổi aspect ratio.
-*/
-
 static void SC16ApplyCrop(UIWindow *window) {
     if (!SC16Enabled() || !window)
         return;
@@ -35,39 +22,52 @@ static void SC16ApplyCrop(UIWindow *window) {
         return;
 
     /*
-     * Giữ nguyên tỷ lệ 1:1.
-     * Không scale window.
+     * Không scale.
+     * Không kéo giãn.
+     * Giữ transform 1:1.
      */
     window.transform = CGAffineTransformIdentity;
 
-    /*
-     * Vùng hiển thị mới:
-     *
-     * y = 60
-     * height = 2778 - 60 - 60
-     */
-    CGRect cropFrame = window.frame;
+    CGRect frame = window.frame;
 
-    cropFrame.origin.y = SC16_TOP_CROP;
-    cropFrame.origin.x = 0;
+    frame.origin.x = 0.0;
+    frame.origin.y = SC16_TOP_CROP;
 
-    cropFrame.size.width = width;
-    cropFrame.size.height =
+    frame.size.width = width;
+    frame.size.height =
         height - SC16_TOP_CROP - SC16_BOTTOM_CROP;
 
-    window.frame = cropFrame;
+    window.frame = frame;
 }
 
-static void SC16ApplyAllWindows(void) {
+static void SC16ApplyScene(UIWindowScene *scene) {
+    if (!SC16Enabled() || !scene)
+        return;
+
+    for (UIWindow *window in scene.windows) {
+        if (!window.hidden) {
+            SC16ApplyCrop(window);
+        }
+    }
+}
+
+static void SC16ApplyAllScenes(void) {
     if (!SC16Enabled())
         return;
 
     UIApplication *app = UIApplication.sharedApplication;
 
-    for (UIWindow *window in app.windows) {
-        if (!window.hidden) {
-            SC16ApplyCrop(window);
-        }
+    for (UIScene *scene in app.connectedScenes) {
+        if (![scene isKindOfClass:[UIWindowScene class]])
+            continue;
+
+        UIWindowScene *windowScene = (UIWindowScene *)scene;
+
+        if (windowScene.activationState ==
+            UISceneActivationStateUnattached)
+            continue;
+
+        SC16ApplyScene(windowScene);
     }
 }
 
@@ -95,30 +95,13 @@ static void SC16ApplyAllWindows(void) {
 
 %end
 
-
-%hook UIApplication
-
-- (void)setWindows:(NSArray<UIWindow *> *)windows {
-    %orig(windows);
-
-    if (SC16Enabled()) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            SC16ApplyAllWindows();
-        });
-    }
-}
-
-%end
-
-
 %ctor {
     @autoreleasepool {
-
         if (!SC16Enabled())
             return;
 
         dispatch_async(dispatch_get_main_queue(), ^{
-            SC16ApplyAllWindows();
+            SC16ApplyAllScenes();
         });
 
         [[NSNotificationCenter defaultCenter]
@@ -126,8 +109,19 @@ static void SC16ApplyAllWindows(void) {
             object:nil
             queue:[NSOperationQueue mainQueue]
             usingBlock:^(__unused NSNotification *notification) {
+                SC16ApplyAllScenes();
+            }];
 
-                SC16ApplyAllWindows();
+        [[NSNotificationCenter defaultCenter]
+            addObserverForName:UISceneDidActivateNotification
+            object:nil
+            queue:[NSOperationQueue mainQueue]
+            usingBlock:^(NSNotification *notification) {
+                UIScene *scene = notification.object;
+
+                if ([scene isKindOfClass:[UIWindowScene class]]) {
+                    SC16ApplyScene((UIWindowScene *)scene);
+                }
             }];
     }
 }
