@@ -1,4 +1,13 @@
-name: Build ScreenCrop16
+make package THEOS_PACKAGE_SCHEME=roothide
+``` citeturn1view0
+
+
+### Sửa `build.yml`
+
+**Xóa toàn bộ workflow cũ** và thay bằng bản này:
+
+```yaml
+name: Build ScreenCrop16 - Roothide
 
 on:
   workflow_dispatch:
@@ -19,38 +28,80 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             git \
+            curl \
             clang \
             make \
             perl \
             fakeroot \
-            dpkg-dev \
+            rsync \
+            zip \
+            libxml2-utils \
             xz-utils
 
-      - name: Install Theos
+      - name: Install roothide Theos
+        shell: bash
         run: |
-          git clone --recursive https://github.com/theos/theos.git "$HOME/theos"
+          set -euxo pipefail
 
-      - name: Install iOS SDK
+          export THEOS="$HOME/theos"
+
+          rm -rf "$THEOS"
+
+          git clone --recursive \
+            https://github.com/roothide/theos.git \
+            "$THEOS"
+
+          echo "THEOS=$THEOS" >> "$GITHUB_ENV"
+
+      - name: Install SDK
+        shell: bash
         run: |
-          git clone --depth 1 https://github.com/theos/sdks.git /tmp/sdks
-          mkdir -p "$HOME/theos/sdks"
+          set -euxo pipefail
 
-          if [ -d "/tmp/sdks/iPhoneOS16.5.sdk" ]; then
-            cp -R "/tmp/sdks/iPhoneOS16.5.sdk" "$HOME/theos/sdks/"
-          else
-            echo "iPhoneOS16.5.sdk not found"
-            ls -la /tmp/sdks
-            exit 1
-          fi
+          export THEOS="$HOME/theos"
+
+          "$THEOS/bin/install-sdk" 16.5
+
+      - name: Verify roothide Theos
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          export THEOS="$HOME/theos"
+
+          echo "Theos:"
+          git -C "$THEOS" remote -v
+
+          echo "Roothide module:"
+          ls -la "$THEOS/vendor/mod/roothide"
+
+          echo "SDK:"
+          ls -la "$THEOS/sdks"
+
+          test -d "$THEOS/vendor/mod/roothide"
 
       - name: Build
+        shell: bash
         run: |
+          set -euxo pipefail
+
           export THEOS="$HOME/theos"
+
           make clean
-          make package FINALPACKAGE=1
+
+          make package \
+            FINALPACKAGE=1 \
+            THEOS_PACKAGE_SCHEME=roothide
+
+      - name: Show package
+        shell: bash
+        run: |
+          find packages -type f -name "*.deb" -print
+          dpkg-deb -I packages/*.deb
 
       - name: Upload DEB
         uses: actions/upload-artifact@v4
         with:
-          name: ScreenCrop16-deb
+          name: ScreenCrop16-roothide
           path: packages/*.deb
+          if-no-files-found: error
