@@ -4,34 +4,29 @@
 #pragma mark - Configuration
 
 /*
- * Cắt/đẩy theo cạnh dài.
+ * Khoảng crop/đẩy của UI.
  *
  * Portrait:
- *   trên 34
- *   dưới 34
+ *   trên / dưới: 34
  *
  * Landscape:
- *   trái 34
- *   phải 34
+ *   trái / phải: 34
  */
-static CGFloat const SC16_TOP_CROP = 34.0;
-static CGFloat const SC16_BOTTOM_CROP = 34.0;
+static CGFloat const SC16_CROP = 34.0;
 
 /*
  * Dịch UI.
  *
  * Portrait:
- *   +10 = đẩy xuống 10px
+ *   xuống 10px
  *
  * Landscape:
- *   +10 = đẩy sang phải 10px
- *
- * Giữ nguyên giá trị này là 10.
+ *   sang phải 10px
  */
 static CGFloat const SC16_SHIFT = 10.0;
 
 /*
- * Bo góc toàn bộ màn hình.
+ * Bo nhẹ 4 góc.
  */
 static CGFloat const SC16_CORNER_RADIUS = 4.0;
 
@@ -147,15 +142,17 @@ static void SC16ApplyPosition(UIWindow *window)
     /*
      * Giữ nguyên kích thước window.
      *
-     * Chỉ thay đổi origin của bounds
-     * để dịch vùng UI.
+     * Chỉ dịch origin của bounds.
      */
     if (SC16IsLandscapeWindow(window))
     {
         /*
-         * LANDSCAPE
+         * LANDSCAPE:
          *
-         * Dịch sang phải 10.
+         * Cắt/đẩy phía trái 34px
+         * và phía phải 34px.
+         *
+         * Dịch UI sang phải 10px.
          */
         bounds.origin.x =
             SC16_SHIFT;
@@ -163,9 +160,12 @@ static void SC16ApplyPosition(UIWindow *window)
     else
     {
         /*
-         * PORTRAIT
+         * PORTRAIT:
          *
-         * Dịch xuống 10.
+         * Cắt/đẩy phía trên 34px
+         * và phía dưới 34px.
+         *
+         * Dịch UI xuống 10px.
          */
         bounds.origin.y =
             SC16_SHIFT;
@@ -186,7 +186,7 @@ static void SC16ApplyCorners(UIWindow *window)
         return;
 
     /*
-     * Bo nhẹ 4 góc.
+     * Bo nhẹ 4 góc màn hình.
      */
     window.layer.cornerRadius =
         SC16_CORNER_RADIUS;
