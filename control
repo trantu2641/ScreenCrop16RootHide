@@ -1,6 +1,6 @@
 Package: com.trantu2641.screencrop16
 Name: ScreenCrop16
-Version: 1.2.3
+Version: 1.2.4
 Architecture: iphoneos-arm64e
 Description: Screen geometry and corner/periphery tweak for roothide iOS 16.4.
 Maintainer: trantu2641
