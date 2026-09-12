@@ -3,25 +3,16 @@
 
 #pragma mark - Configuration
 
-/*
- * Crop 34 point mỗi đầu.
- *
- * Portrait:
- *   trên 34
- *   dưới 34
- *
- * Landscape:
- *   trái 34
- *   phải 34
- */
 static CGFloat const SC16_CROP = 34.0;
 
 /*
- * UI hiện đang bị đẩy lên 14px.
+ * Dịch UI:
  *
- * Đổi thành +14 để đẩy xuống.
+ * X = -6  -> sang trái 6px
+ * Y = -6  -> lên 6px
  */
-static CGFloat const SC16_SHIFT_Y = 14.0;
+static CGFloat const SC16_SHIFT_X = -6.0;
+static CGFloat const SC16_SHIFT_Y = -6.0;
 
 #pragma mark - Enable
 
@@ -50,9 +41,7 @@ static BOOL SC16ShouldSkipWindow(UIWindow *window)
         NSStringFromClass(window.class);
 
     /*
-     * Chỉ bỏ keyboard.
-     *
-     * KHÔNG còn kiểm tra StatusBar.
+     * Không đụng keyboard.
      */
     if ([name containsString:@"UITextEffectsWindow"])
         return YES;
@@ -100,7 +89,9 @@ static void SC16ApplyCrop(UIWindow *window)
     /*
      * PORTRAIT
      *
-     * Cắt trên / dưới.
+     * Cắt:
+     *   trên 34
+     *   dưới 34
      */
     if (height > width)
     {
@@ -110,7 +101,9 @@ static void SC16ApplyCrop(UIWindow *window)
     /*
      * LANDSCAPE
      *
-     * Cắt trái / phải.
+     * Cắt:
+     *   trái 34
+     *   phải 34
      */
     else
     {
@@ -135,48 +128,25 @@ static void SC16ApplyCrop(UIWindow *window)
         return;
 
     /*
-     * Không thay đổi geometry của UIWindow.
+     * Không thay đổi geometry UIWindow.
      */
     window.transform =
         CGAffineTransformIdentity;
 
     /*
-     * Reset transform cũ.
-     */
-    root.transform =
-        CGAffineTransformIdentity;
-
-    /*
-     * --------------------------------
-     * DỊCH UI
-     * --------------------------------
+     * Dịch toàn bộ UI:
      *
-     * Bản cũ:
-     *     -14 / -34 -> UI bị đẩy lên.
-     *
-     * Bản này:
-     *     +14 Y -> UI đẩy xuống 14px.
-     *
-     * Không dịch theo X.
+     * X -6 = sang trái 6
+     * Y -6 = lên 6
      */
     root.transform =
         CGAffineTransformMakeTranslation(
-            0.0,
+            SC16_SHIFT_X,
             SC16_SHIFT_Y
         );
 
     /*
-     * --------------------------------
-     * VIEWPORT CROP
-     * --------------------------------
-     *
-     * Portrait:
-     *     34 trên
-     *     34 dưới
-     *
-     * Landscape:
-     *     34 trái
-     *     34 phải
+     * Vùng hiển thị sau khi crop.
      */
     CGRect visibleRect =
         CGRectMake(
@@ -204,7 +174,7 @@ static void SC16ApplyCrop(UIWindow *window)
     CGPathRelease(path);
 
     /*
-     * Crop thật bằng layer mask.
+     * Crop thật.
      */
     window.layer.mask =
         mask;
@@ -267,9 +237,6 @@ static void SC16ApplyAll(void)
 
 %hook UIWindow
 
-/*
- * Window mới hiển thị.
- */
 - (void)makeKeyAndVisible
 {
     %orig;
@@ -288,9 +255,6 @@ static void SC16ApplyAll(void)
     );
 }
 
-/*
- * Window xuất hiện.
- */
 - (void)setHidden:(BOOL)hidden
 {
     %orig(hidden);
@@ -329,14 +293,8 @@ static void SC16ApplyAll(void)
         dispatch_async(
             dispatch_get_main_queue(),
             ^{
-                /*
-                 * Apply lần đầu.
-                 */
                 SC16ApplyAll();
 
-                /*
-                 * Apply lại sau khi UIKit ổn định.
-                 */
                 dispatch_after(
                     dispatch_time(
                         DISPATCH_TIME_NOW,
