@@ -4,14 +4,12 @@
 #pragma mark - Configuration
 
 static CGFloat const SC16_CROP = 34.0;
-static CGFloat const SC16_MULTITASK_RADIUS = 2.0;
 
 #pragma mark - Helpers
 
 static BOOL SC16Enabled(void)
 {
     /*
-     * Không giới hạn riêng 16.4 nữa.
      * Tweak hoạt động trên iOS 16.x.
      */
     NSString *version = UIDevice.currentDevice.systemVersion;
@@ -83,22 +81,7 @@ static BOOL SC16ShouldIgnoreWindow(UIWindow *window)
     return NO;
 }
 
-#pragma mark - Crop
-
-static void SC16RemoveCrop(UIWindow *window)
-{
-    if (!window)
-        return;
-
-    window.layer.mask = nil;
-    window.layer.cornerRadius = 0.0;
-    window.layer.masksToBounds = NO;
-
-    /*
-     * Tuyệt đối không thay đổi transform.
-     */
-    window.transform = CGAffineTransformIdentity;
-}
+#pragma mark - Real Crop
 
 static void SC16ApplyRealCrop(UIWindow *window)
 {
@@ -139,8 +122,11 @@ static void SC16ApplyRealCrop(UIWindow *window)
 
     window.transform = CGAffineTransformIdentity;
 
-    BOOL landscape =
-        windowWidth > windowHeight;
+    /*
+     * Xác định orientation bằng kích thước
+     * thực tế của UIWindow.
+     */
+    BOOL landscape = windowWidth > windowHeight;
 
     CGFloat leftCrop = 0.0;
     CGFloat rightCrop = 0.0;
@@ -155,11 +141,12 @@ static void SC16ApplyRealCrop(UIWindow *window)
          * 1284 x 2778
          *
          * Cắt:
-         * trên 34
-         * dưới 34
+         * trên 34 px
+         * dưới 34 px
          *
          * Giữ nguyên toàn bộ chiều ngang.
          */
+
         topCrop = SC16_CROP;
         bottomCrop = SC16_CROP;
 
@@ -170,17 +157,17 @@ static void SC16ApplyRealCrop(UIWindow *window)
          *
          * 2778 x 1284
          *
-         * Không cắt chiều 1248/1284.
+         * Không cắt cạnh ngắn 1284.
          *
-         * Chuyển vùng crop sang hai đầu
-         * của cạnh dài 2778.
+         * Crop hai đầu của cạnh dài 2778:
          *
-         * => trái 34
-         * => phải 34
+         * trái 34 px
+         * phải 34 px
          *
-         * Nhờ vậy Control Centre / notification
-         * ở cạnh ngắn không bị cắt.
+         * Control Center / Notification
+         * nằm trên cạnh ngắn nên không bị crop.
          */
+
         leftCrop = SC16_CROP;
         rightCrop = SC16_CROP;
     }
@@ -195,12 +182,14 @@ static void SC16ApplyRealCrop(UIWindow *window)
         return;
 
     /*
-     * CAShapeLayer dùng làm CLIP MASK.
+     * CAShapeLayer làm CLIP MASK.
      *
      * Đây không phải overlay màu đen.
-     * Pixel nằm ngoài vùng này thực sự không được
+     *
+     * Pixel nằm ngoài mask sẽ không được
      * render ra UIWindow.
      */
+
     CAShapeLayer *mask = [CAShapeLayer layer];
 
     CGRect maskRect = CGRectMake(
@@ -224,8 +213,11 @@ static void SC16ApplyRealCrop(UIWindow *window)
     window.layer.mask = mask;
 }
 
-#pragma mark - Multitasking corner
+#pragma mark - Multitasking
 
+/*
+ * Nhận diện window/container của UI đa nhiệm.
+ */
 static BOOL SC16LooksLikeMultitaskingWindow(UIWindow *window)
 {
     if (!window)
@@ -234,12 +226,6 @@ static BOOL SC16LooksLikeMultitaskingWindow(UIWindow *window)
     NSString *className =
         NSStringFromClass(window.class);
 
-    /*
-     * Chỉ dùng để nhận diện các container
-     * thường xuất hiện trong UI đa nhiệm.
-     *
-     * Không ép toàn bộ UIWindow.cornerRadius.
-     */
     if ([className containsString:@"SB"])
         return YES;
 
@@ -264,11 +250,11 @@ static void SC16ApplyMultitaskCorner(UIWindow *window)
         return;
 
     /*
-     * Giữ góc gần vuông như bản đầu:
-     * 2.0 px.
+     * Góc gần vuông như bản đầu.
+     *
+     * Không dùng radius cho app window bình thường.
      */
-    window.layer.cornerRadius =
-        SC16_MULTITASK_RADIUS;
+    window.layer.cornerRadius = 2.0;
 
     window.layer.masksToBounds = YES;
 }
@@ -287,15 +273,14 @@ static void SC16ApplyWindow(UIWindow *window)
         return;
 
     /*
-     * Crop thật bằng mask.
+     * Crop thật bằng layer mask.
      */
     SC16ApplyRealCrop(window);
 
     /*
-     * Góc multitasking gần vuông.
+     * Chỉ bo góc UI đa nhiệm.
      *
-     * Không áp dụng corner cho toàn bộ app window,
-     * tránh làm app bị bo góc ngoài ý muốn.
+     * Không bo góc toàn bộ app window.
      */
     SC16ApplyMultitaskCorner(window);
 }
@@ -310,7 +295,12 @@ static void SC16ApplyScene(UIWindowScene *scene)
     if (!SC16Enabled())
         return;
 
-    NSArray<UIWindow *> *windows = scene.windows;
+    /*
+     * iOS 15+:
+     * dùng scene.windows.
+     */
+    NSArray<UIWindow *> *windows =
+        scene.windows;
 
     for (UIWindow *window in windows) {
 
@@ -359,15 +349,21 @@ static void SC16ReapplyAfterRotation(void)
         return;
 
     /*
-     * Không sửa bounds/frame trong lúc UIKit đang
-     * transition rotation.
+     * Không sửa bounds/frame trong lúc UIKit
+     * đang transition rotation.
      *
-     * Chờ rotation hoàn tất rồi thay mask.
+     * Chỉ cập nhật lại mask sau khi rotation.
      */
+
     dispatch_async(
         dispatch_get_main_queue(),
         ^{
             SC16ApplyAllScenes();
+
+            /*
+             * Một lần nữa ở vòng main queue tiếp theo
+             * để bắt kích thước UIWindow sau rotation.
+             */
 
             dispatch_async(
                 dispatch_get_main_queue(),
@@ -425,7 +421,8 @@ static void SC16ReapplyAfterRotation(void)
 
     /*
      * Không thay đổi frame.
-     * Chỉ re-apply mask sau layout.
+     *
+     * Chỉ cập nhật mask sau layout.
      */
     dispatch_async(
         dispatch_get_main_queue(),
@@ -449,6 +446,7 @@ static void SC16ReapplyAfterRotation(void)
      * Không can thiệp vào bounds.
      * Chỉ cập nhật lại mask theo kích thước mới.
      */
+
     dispatch_async(
         dispatch_get_main_queue(),
         ^{
@@ -472,6 +470,7 @@ static void SC16ReapplyAfterRotation(void)
         /*
          * Initial apply.
          */
+
         dispatch_async(
             dispatch_get_main_queue(),
             ^{
@@ -482,6 +481,7 @@ static void SC16ReapplyAfterRotation(void)
         /*
          * App active.
          */
+
         [[NSNotificationCenter defaultCenter]
             addObserverForName:
                 UIApplicationDidBecomeActiveNotification
@@ -496,6 +496,7 @@ static void SC16ReapplyAfterRotation(void)
         /*
          * Scene active.
          */
+
         [[NSNotificationCenter defaultCenter]
             addObserverForName:
                 UISceneDidActivateNotification
@@ -519,6 +520,7 @@ static void SC16ReapplyAfterRotation(void)
         /*
          * Scene foreground.
          */
+
         [[NSNotificationCenter defaultCenter]
             addObserverForName:
                 UISceneWillEnterForegroundNotification
@@ -542,11 +544,10 @@ static void SC16ReapplyAfterRotation(void)
         /*
          * Rotation.
          *
-         * Không dùng:
-         * UIWindowSceneDidUpdateNotification
-         *
+         * Không dùng UIWindowSceneDidUpdateNotification
          * vì SDK iOS 16.5 không có symbol này.
          */
+
         [[NSNotificationCenter defaultCenter]
             addObserverForName:
                 UIDeviceOrientationDidChangeNotification
