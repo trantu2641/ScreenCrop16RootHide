@@ -1,7 +1,11 @@
 #import <UIKit/UIKit.h>
-#import <QuartzCore/QuartzCore.h>
 
-static CGFloat const SC16_CROP = 34.0;
+#pragma mark - Configuration
+
+static CGFloat const SC16_INSET = 34.0;
+
+
+#pragma mark - Enable
 
 static BOOL SC16Enabled(void)
 {
@@ -10,6 +14,9 @@ static BOOL SC16Enabled(void)
 
     return [version hasPrefix:@"16."];
 }
+
+
+#pragma mark - Window Filter
 
 static BOOL SC16ShouldSkipWindow(UIWindow *window)
 {
@@ -26,7 +33,7 @@ static BOOL SC16ShouldSkipWindow(UIWindow *window)
         NSStringFromClass(window.class);
 
     /*
-     * Không đụng keyboard.
+     * Keyboard
      */
     if ([name containsString:@"UITextEffectsWindow"])
         return YES;
@@ -34,11 +41,14 @@ static BOOL SC16ShouldSkipWindow(UIWindow *window)
     if ([name containsString:@"UIRemoteKeyboardWindow"])
         return YES;
 
+    if ([name containsString:@"KeyboardWindow"])
+        return YES;
+
     if ([name containsString:@"Keyboard"])
         return YES;
 
     /*
-     * Không đụng status bar window.
+     * Status bar
      */
     if ([name containsString:@"StatusBar"])
         return YES;
@@ -49,7 +59,10 @@ static BOOL SC16ShouldSkipWindow(UIWindow *window)
     return NO;
 }
 
-static void SC16ApplyCrop(UIWindow *window)
+
+#pragma mark - Apply Insets
+
+static void SC16ApplyInsets(UIWindow *window)
 {
     if (!SC16Enabled())
         return;
@@ -57,117 +70,94 @@ static void SC16ApplyCrop(UIWindow *window)
     if (SC16ShouldSkipWindow(window))
         return;
 
-    /*
-     * Không crop window đặc biệt.
-     */
     UIViewController *root =
         window.rootViewController;
 
     if (!root)
         return;
 
+    /*
+     * Không xử lý khi root view chưa có kích thước.
+     */
     UIView *view =
         root.view;
 
     if (!view)
         return;
 
-    CGRect bounds =
-        view.bounds;
-
-    CGFloat width =
-        CGRectGetWidth(bounds);
-
-    CGFloat height =
-        CGRectGetHeight(bounds);
-
-    if (width <= 0.0 || height <= 0.0)
-        return;
-
-    /*
-     * Xóa mask cũ.
-     */
-    view.layer.mask = nil;
-
-    CGFloat left = 0.0;
-    CGFloat right = 0.0;
-    CGFloat top = 0.0;
-    CGFloat bottom = 0.0;
-
-    /*
-     * DỌC
-     *
-     * Crop 34 trên
-     * Crop 34 dưới
-     */
-    if (height > width)
+    if (view.bounds.size.width <= 0.0 ||
+        view.bounds.size.height <= 0.0)
     {
-        top = SC16_CROP;
-        bottom = SC16_CROP;
+        return;
     }
+
     /*
-     * NGANG
-     *
-     * Crop 34 trái
-     * Crop 34 phải
+     * Xác định orientation bằng kích thước
+     * thực tế của root view.
      */
+    BOOL landscape =
+        view.bounds.size.width >
+        view.bounds.size.height;
+
+    /*
+     * Lấy safe-area hiện tại.
+     *
+     * additionalSafeAreaInsets là phần INSET
+     * cộng thêm vào safe area của UIKit.
+     */
+    UIEdgeInsets inset =
+        UIEdgeInsetsZero;
+
+    if (landscape)
+    {
+        /*
+         * NGANG
+         *
+         * Trái 34
+         * Phải 34
+         */
+        inset.left =
+            SC16_INSET;
+
+        inset.right =
+            SC16_INSET;
+    }
     else
     {
-        left = SC16_CROP;
-        right = SC16_CROP;
+        /*
+         * DỌC
+         *
+         * Trên 34
+         * Dưới 34
+         */
+        inset.top =
+            SC16_INSET;
+
+        inset.bottom =
+            SC16_INSET;
     }
 
-    CGFloat visibleWidth =
-        width - left - right;
-
-    CGFloat visibleHeight =
-        height - top - bottom;
-
-    if (visibleWidth <= 0.0 ||
-        visibleHeight <= 0.0)
-        return;
+    /*
+     * Không transform.
+     * Không đổi frame.
+     * Không đổi bounds.
+     *
+     * UIKit sẽ tự layout những view sử dụng
+     * safeAreaInsets vào vùng mới.
+     */
+    root.additionalSafeAreaInsets =
+        inset;
 
     /*
-     * Vùng content được phép render.
-     *
-     * Không thay đổi:
-     *
-     * frame
-     * bounds
-     * center
-     * transform
+     * Yêu cầu UIKit cập nhật layout.
      */
-    CGRect visibleRect =
-        CGRectMake(
-            CGRectGetMinX(bounds) + left,
-            CGRectGetMinY(bounds) + top,
-            visibleWidth,
-            visibleHeight
-        );
+    [root.view setNeedsLayout];
 
-    CAShapeLayer *mask =
-        [CAShapeLayer layer];
-
-    mask.frame =
-        bounds;
-
-    CGPathRef path =
-        CGPathCreateWithRect(
-            visibleRect,
-            NULL
-        );
-
-    mask.path =
-        path;
-
-    CGPathRelease(path);
-
-    /*
-     * Chỉ crop root content.
-     */
-    view.layer.mask =
-        mask;
+    [root.view layoutIfNeeded];
 }
+
+
+#pragma mark - Apply All Scenes
 
 static void SC16ApplyAllScenes(void)
 {
@@ -177,8 +167,10 @@ static void SC16ApplyAllScenes(void)
     UIApplication *application =
         UIApplication.sharedApplication;
 
-    for (UIScene *scene
-         in application.connectedScenes)
+    NSSet<UIScene *> *scenes =
+        application.connectedScenes;
+
+    for (UIScene *scene in scenes)
     {
         if (![scene
               isKindOfClass:[UIWindowScene class]])
@@ -186,22 +178,27 @@ static void SC16ApplyAllScenes(void)
             continue;
         }
 
-        UIWindowScene *sceneWindow =
+        UIWindowScene *windowScene =
             (UIWindowScene *)scene;
 
-        if (sceneWindow.activationState ==
+        if (windowScene.activationState ==
             UISceneActivationStateUnattached)
         {
             continue;
         }
 
-        for (UIWindow *window
-             in sceneWindow.windows)
+        NSArray<UIWindow *> *windows =
+            windowScene.windows;
+
+        for (UIWindow *window in windows)
         {
-            SC16ApplyCrop(window);
+            SC16ApplyInsets(window);
         }
     }
 }
+
+
+#pragma mark - UIWindow
 
 %hook UIWindow
 
@@ -212,17 +209,21 @@ static void SC16ApplyAllScenes(void)
     if (!SC16Enabled())
         return;
 
-    UIWindow *window = self;
+    UIWindow *window =
+        self;
 
     dispatch_async(
         dispatch_get_main_queue(),
         ^{
-            SC16ApplyCrop(window);
+            SC16ApplyInsets(window);
         }
     );
 }
 
 %end
+
+
+#pragma mark - Constructor
 
 %ctor
 {
@@ -234,8 +235,15 @@ static void SC16ApplyAllScenes(void)
         dispatch_async(
             dispatch_get_main_queue(),
             ^{
+                /*
+                 * Lần đầu.
+                 */
                 SC16ApplyAllScenes();
 
+                /*
+                 * Apply lại sau khi UIKit hoàn tất
+                 * việc tạo/layout window.
+                 */
                 dispatch_after(
                     dispatch_time(
                         DISPATCH_TIME_NOW,
