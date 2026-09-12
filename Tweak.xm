@@ -10,7 +10,6 @@ static CGFloat const SC16_BOTTOM_CROP = 34.0;
  * Multitasking corner.
  * Không áp dụng corner này trực tiếp lên UIWindow.
  */
-static CGFloat const SC16_MULTITASK_RADIUS = 2.0;
 
 #pragma mark - Helpers
 
