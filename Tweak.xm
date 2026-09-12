@@ -4,19 +4,18 @@
 #pragma mark - Configuration
 
 /*
- * Số point cần crop ở MỖI ĐẦU.
+ * Crop 34 point mỗi đầu.
  *
  * Portrait:
- *     trên 34
- *     dưới 34
+ *   trên 34
+ *   dưới 34
  *
  * Landscape:
- *     trái 34
- *     phải 34
- *
- * KHÔNG chia cho nativeScale.
+ *   trái 34
+ *   phải 34
  */
 static CGFloat const SC16_CROP = 34.0;
+
 
 #pragma mark - Enable
 
@@ -28,66 +27,21 @@ static BOOL SC16Enabled(void)
     return [version hasPrefix:@"16."];
 }
 
-#pragma mark - Window Filter
 
-static BOOL SC16ShouldSkipWindow(UIWindow *window)
-{
-    if (!window)
-        return YES;
-
-    if (window.hidden)
-        return YES;
-
-    if (window.alpha <= 0.0)
-        return YES;
-
-    NSString *name =
-        NSStringFromClass(window.class);
-
-    /*
-     * Không crop keyboard.
-     */
-    if ([name containsString:@"UITextEffectsWindow"])
-        return YES;
-
-    if ([name containsString:@"UIRemoteKeyboardWindow"])
-        return YES;
-
-    if ([name containsString:@"Keyboard"])
-        return YES;
-
-    if ([name containsString:@"KeyboardWindow"])
-        return YES;
-
-    /*
-     * Không crop status bar.
-     */
-    if ([name containsString:@"StatusBar"])
-        return YES;
-
-    if ([name containsString:@"_UIStatusBar"])
-        return YES;
-
-    /*
-     * Không crop alert.
-     */
-    if ([name containsString:@"Alert"])
-        return YES;
-
-    if ([name containsString:@"UIAlert"])
-        return YES;
-
-    return NO;
-}
-
-#pragma mark - Real Crop
+#pragma mark - Crop Window
 
 static void SC16ApplyCrop(UIWindow *window)
 {
+    if (!window)
+        return;
+
     if (!SC16Enabled())
         return;
 
-    if (SC16ShouldSkipWindow(window))
+    if (window.hidden)
+        return;
+
+    if (window.alpha <= 0.0)
         return;
 
     CGRect bounds =
@@ -102,67 +56,52 @@ static void SC16ApplyCrop(UIWindow *window)
     if (width <= 0.0 || height <= 0.0)
         return;
 
-    /*
-     * Dùng trực tiếp 34.
-     *
-     * Không:
-     *
-     * 34 / nativeScale
-     *
-     * vì điều đó làm crop nhỏ hơn mong muốn
-     * trên màn hình Retina.
-     */
-    CGFloat crop =
-        SC16_CROP;
 
-    CGFloat left = 0.0;
-    CGFloat right = 0.0;
-    CGFloat top = 0.0;
+    /*
+     * Xác định orientation trực tiếp
+     * từ bounds của window.
+     */
+    BOOL landscape =
+        width > height;
+
+
+    /*
+     * Xóa mask cũ.
+     */
+    window.layer.mask = nil;
+
+
+    /*
+     * Cắt hai đầu.
+     */
+    CGFloat left   = 0.0;
+    CGFloat right  = 0.0;
+    CGFloat top    = 0.0;
     CGFloat bottom = 0.0;
 
-    /*
-     * PORTRAIT
-     *
-     * Cắt trên + dưới.
-     *
-     * ┌──────────────┐
-     * │              │
-     * │    CROP 34   │
-     * ├──────────────┤
-     * │              │
-     * │    CONTENT   │
-     * │              │
-     * ├──────────────┤
-     * │    CROP 34   │
-     * └──────────────┘
-     */
-    if (height > width)
+    if (landscape)
     {
-        top = crop;
-        bottom = crop;
+        /*
+         * NGANG
+         *
+         * 34 trái
+         * 34 phải
+         */
+        left  = SC16_CROP;
+        right = SC16_CROP;
     }
-
-    /*
-     * LANDSCAPE
-     *
-     * Cắt trái + phải.
-     *
-     * ┌────────────────────────────┐
-     * │                            │
-     * │                            │
-     * │                            │
-     * └────────────────────────────┘
-     *
-     *  ↑                          ↑
-     * 34                         34
-     *
-     * KHÔNG cắt trên / dưới.
-     */
     else
     {
-        left = crop;
-        right = crop;
+        /*
+         * DỌC
+         *
+         * 34 trên
+         * 34 dưới
+         */
+        top    = SC16_CROP;
+        bottom = SC16_CROP;
     }
+
 
     CGFloat visibleWidth =
         width - left - right;
@@ -172,29 +111,13 @@ static void SC16ApplyCrop(UIWindow *window)
 
     if (visibleWidth <= 0.0 ||
         visibleHeight <= 0.0)
+    {
         return;
+    }
+
 
     /*
-     * Xóa mask cũ.
-     *
-     * Quan trọng khi xoay:
-     *
-     * Portrait:
-     *     top / bottom
-     *
-     * Landscape:
-     *     left / right
-     */
-    window.layer.mask = nil;
-
-    /*
-     * Không thay đổi geometry.
-     */
-    window.transform =
-        CGAffineTransformIdentity;
-
-    /*
-     * Vùng còn được render.
+     * Mask vùng thực sự được hiển thị.
      */
     CGRect visibleRect =
         CGRectMake(
@@ -204,14 +127,13 @@ static void SC16ApplyCrop(UIWindow *window)
             visibleHeight
         );
 
-    /*
-     * Mask hình chữ nhật.
-     */
+
     CAShapeLayer *mask =
         [CAShapeLayer layer];
 
     mask.frame =
         bounds;
+
 
     CGPathRef path =
         CGPathCreateWithRect(
@@ -224,63 +146,84 @@ static void SC16ApplyCrop(UIWindow *window)
 
     CGPathRelease(path);
 
-    /*
-     * Crop thực sự bằng CALayer mask.
-     *
-     * Không tạo UIView đen.
-     * Không overlay.
-     */
+
     window.layer.mask =
         mask;
-}
 
-#pragma mark - Scene
-
-static void SC16ApplyScene(UIWindowScene *scene)
-{
-    if (!SC16Enabled())
-        return;
-
-    if (!scene)
-        return;
-
-    if (scene.activationState ==
-        UISceneActivationStateUnattached)
-        return;
 
     /*
-     * Chỉ dùng UIWindowScene.windows.
+     * ------------------------------------------------
+     * ĐẨY CONTENT VÀO VÙNG CROP
+     * ------------------------------------------------
      *
-     * Không dùng:
+     * Không thay đổi UIWindow frame/bounds.
      *
-     * UIApplication.windows
+     * Chỉ tác động root view.
      */
-    NSArray<UIWindow *> *windows =
-        scene.windows;
 
-    for (UIWindow *window in windows)
+    UIView *content =
+        window.rootViewController.view;
+
+    if (!content)
+        return;
+
+
+    /*
+     * Xóa transform cũ trước khi áp dụng.
+     */
+    content.layer.transform =
+        CATransform3DIdentity;
+
+
+    if (landscape)
     {
-        if (!window)
-            continue;
-
-        SC16ApplyCrop(window);
+        /*
+         * NGANG:
+         *
+         * Crop trái 34
+         *
+         * Đẩy content sang phải 34.
+         */
+        content.layer.transform =
+            CATransform3DMakeTranslation(
+                SC16_CROP,
+                0.0,
+                0.0
+            );
+    }
+    else
+    {
+        /*
+         * DỌC:
+         *
+         * Crop trên 34
+         *
+         * Đẩy content xuống 34.
+         */
+        content.layer.transform =
+            CATransform3DMakeTranslation(
+                0.0,
+                SC16_CROP,
+                0.0
+            );
     }
 }
 
-#pragma mark - All Scenes
 
-static void SC16ApplyAllScenes(void)
+#pragma mark - Apply All Windows
+
+static void SC16ApplyAllWindows(void)
 {
     if (!SC16Enabled())
         return;
+
 
     UIApplication *application =
         UIApplication.sharedApplication;
 
-    NSSet<UIScene *> *scenes =
-        application.connectedScenes;
 
-    for (UIScene *scene in scenes)
+    for (UIScene *scene
+         in application.connectedScenes)
     {
         if (![scene
               isKindOfClass:[UIWindowScene class]])
@@ -288,19 +231,35 @@ static void SC16ApplyAllScenes(void)
             continue;
         }
 
-        SC16ApplyScene(
-            (UIWindowScene *)scene
-        );
+
+        UIWindowScene *windowScene =
+            (UIWindowScene *)scene;
+
+
+        if (windowScene.activationState ==
+            UISceneActivationStateUnattached)
+        {
+            continue;
+        }
+
+
+        for (UIWindow *window
+             in windowScene.windows)
+        {
+            if (!window)
+                continue;
+
+            SC16ApplyCrop(window);
+        }
     }
 }
 
-#pragma mark - UIWindow Hooks
+
+#pragma mark - UIWindow Hook
 
 %hook UIWindow
 
-/*
- * Window mới hiển thị.
- */
+
 - (void)makeKeyAndVisible
 {
     %orig;
@@ -308,8 +267,10 @@ static void SC16ApplyAllScenes(void)
     if (!SC16Enabled())
         return;
 
+
     UIWindow *window =
         self;
+
 
     dispatch_async(
         dispatch_get_main_queue(),
@@ -319,34 +280,9 @@ static void SC16ApplyAllScenes(void)
     );
 }
 
-/*
- * Window xuất hiện.
- */
-- (void)setHidden:(BOOL)hidden
-{
-    %orig(hidden);
-
-    if (!SC16Enabled())
-        return;
-
-    if (hidden)
-        return;
-
-    UIWindow *window =
-        self;
-
-    dispatch_async(
-        dispatch_get_main_queue(),
-        ^{
-            if (!window.hidden)
-            {
-                SC16ApplyCrop(window);
-            }
-        }
-    );
-}
 
 %end
+
 
 #pragma mark - Constructor
 
@@ -357,13 +293,15 @@ static void SC16ApplyAllScenes(void)
         if (!SC16Enabled())
             return;
 
-        /*
-         * Đợi UIKit tạo window/scene.
-         */
+
         dispatch_async(
             dispatch_get_main_queue(),
             ^{
-                SC16ApplyAllScenes();
+                /*
+                 * Đợi UIKit tạo window.
+                 */
+                SC16ApplyAllWindows();
+
 
                 /*
                  * Apply lại sau layout.
@@ -378,7 +316,7 @@ static void SC16ApplyAllScenes(void)
                     ),
                     dispatch_get_main_queue(),
                     ^{
-                        SC16ApplyAllScenes();
+                        SC16ApplyAllWindows();
                     }
                 );
             }
