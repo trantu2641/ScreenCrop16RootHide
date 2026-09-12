@@ -4,7 +4,7 @@
 #pragma mark - Configuration
 
 /*
- * CROP THỰC TẾ
+ * CROP:
  *
  * Portrait:
  *   trên 34px
@@ -30,7 +30,6 @@ static CGFloat const SC16_HORIZONTAL_SHIFT = -10.0;
 
 /*
  * UI đa nhiệm:
- *
  * 0px = không bo.
  */
 static CGFloat const SC16_MULTITASK_CORNER = 0.0;
@@ -151,15 +150,13 @@ static void SC16ApplyMultitaskingCorner(UIWindow *window)
         return;
 
     /*
-     * Giữ 0px theo yêu cầu.
+     * Giữ UI đa nhiệm 0px.
      */
     window.layer.cornerRadius =
         SC16_MULTITASK_CORNER;
 
-    /*
-     * Không bo màn hình/app window bình thường.
-     */
-    window.layer.masksToBounds = YES;
+    window.layer.masksToBounds =
+        YES;
 }
 
 #pragma mark - UI Shift
@@ -188,7 +185,7 @@ static void SC16ApplyUIShift(UIWindow *window)
     {
         /*
          * Ngang:
-         * đẩy sang trái 10px.
+         * sang trái 10px.
          */
         x = SC16_HORIZONTAL_SHIFT;
     }
@@ -196,18 +193,14 @@ static void SC16ApplyUIShift(UIWindow *window)
     {
         /*
          * Dọc:
-         * đẩy lên 10px.
+         * lên 10px.
          */
         y = SC16_VERTICAL_SHIFT;
     }
 
     /*
-     * Dịch nội dung của window,
-     * không thay đổi frame/bounds.
+     * Dịch layer UI.
      */
-    CALayer *layer =
-        window.layer;
-
     CATransform3D transform =
         CATransform3DMakeTranslation(
             x,
@@ -215,7 +208,7 @@ static void SC16ApplyUIShift(UIWindow *window)
             0.0
         );
 
-    layer.transform =
+    window.layer.transform =
         transform;
 }
 
@@ -256,11 +249,10 @@ static void SC16ApplyCrop(UIWindow *window)
     CGFloat bottom = 0.0;
 
     /*
-     * DỌC
+     * DỌC:
      *
-     * Crop:
-     *   trên 34
-     *   dưới 34
+     * Cắt trên 34px
+     * Cắt dưới 34px
      */
     if (height > width)
     {
@@ -271,11 +263,10 @@ static void SC16ApplyCrop(UIWindow *window)
             SC16_CROP;
     }
     /*
-     * NGANG
+     * NGANG:
      *
-     * Crop:
-     *   trái 34
-     *   phải 34
+     * Cắt trái 34px
+     * Cắt phải 34px
      */
     else
     {
@@ -304,13 +295,13 @@ static void SC16ApplyCrop(UIWindow *window)
     window.layer.mask = nil;
 
     /*
-     * Không thay frame/bounds/center.
+     * Không thay đổi geometry của UIWindow.
      */
     window.transform =
         CGAffineTransformIdentity;
 
     /*
-     * Vùng thực sự được hiển thị.
+     * Vùng hiển thị sau crop.
      */
     CGRect visibleRect =
         CGRectMake(
@@ -344,7 +335,7 @@ static void SC16ApplyCrop(UIWindow *window)
         mask;
 }
 
-#pragma mark - Apply Window
+#pragma mark - Apply
 
 static void SC16ApplyWindow(UIWindow *window)
 {
@@ -355,17 +346,17 @@ static void SC16ApplyWindow(UIWindow *window)
         return;
 
     /*
-     * Crop trước.
+     * Crop.
      */
     SC16ApplyCrop(window);
 
     /*
-     * Sau đó dịch UI.
+     * Dịch UI.
      */
     SC16ApplyUIShift(window);
 
     /*
-     * Corner đa nhiệm giữ 0px.
+     * UI đa nhiệm.
      */
     SC16ApplyMultitaskingCorner(window);
 }
@@ -423,35 +414,6 @@ static void SC16ApplyAllScenes(void)
             (UIWindowScene *)scene
         );
     }
-}
-
-#pragma mark - Delayed Apply
-
-static void SC16ScheduleApply(void)
-{
-    if (!SC16Enabled())
-        return;
-
-    dispatch_async(
-        dispatch_get_main_queue(),
-        ^{
-            SC16ApplyAllScenes();
-
-            dispatch_after(
-                dispatch_time(
-                    DISPATCH_TIME_NOW,
-                    (int64_t)(
-                        0.15 *
-                        NSEC_PER_SEC
-                    )
-                ),
-                dispatch_get_main_queue(),
-                ^{
-                    SC16ApplyAllScenes();
-                }
-            );
-        }
-    );
 }
 
 #pragma mark - UIWindow Hooks
