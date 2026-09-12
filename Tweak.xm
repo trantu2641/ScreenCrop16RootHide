@@ -4,17 +4,6 @@
 #pragma mark - Configuration
 
 /*
- * Khoảng crop/đẩy của UI.
- *
- * Portrait:
- *   trên / dưới: 34
- *
- * Landscape:
- *   trái / phải: 34
- */
-static CGFloat const SC16_CROP = 34.0;
-
-/*
  * Dịch UI.
  *
  * Portrait:
@@ -147,12 +136,9 @@ static void SC16ApplyPosition(UIWindow *window)
     if (SC16IsLandscapeWindow(window))
     {
         /*
-         * LANDSCAPE:
+         * LANDSCAPE
          *
-         * Cắt/đẩy phía trái 34px
-         * và phía phải 34px.
-         *
-         * Dịch UI sang phải 10px.
+         * Dịch sang phải 10px.
          */
         bounds.origin.x =
             SC16_SHIFT;
@@ -160,12 +146,9 @@ static void SC16ApplyPosition(UIWindow *window)
     else
     {
         /*
-         * PORTRAIT:
+         * PORTRAIT
          *
-         * Cắt/đẩy phía trên 34px
-         * và phía dưới 34px.
-         *
-         * Dịch UI xuống 10px.
+         * Dịch xuống 10px.
          */
         bounds.origin.y =
             SC16_SHIFT;
@@ -186,7 +169,7 @@ static void SC16ApplyCorners(UIWindow *window)
         return;
 
     /*
-     * Bo nhẹ 4 góc màn hình.
+     * Bo nhẹ 4 góc.
      */
     window.layer.cornerRadius =
         SC16_CORNER_RADIUS;
@@ -205,14 +188,7 @@ static void SC16ApplyWindow(UIWindow *window)
     if (SC16ShouldSkipWindow(window))
         return;
 
-    /*
-     * Dịch UI.
-     */
     SC16ApplyPosition(window);
-
-    /*
-     * Bo 4 góc.
-     */
     SC16ApplyCorners(window);
 }
 
@@ -278,9 +254,6 @@ static void SC16ApplyAllScenes(void)
 
 %hook UIWindow
 
-/*
- * Window mới hiển thị.
- */
 - (void)makeKeyAndVisible
 {
     %orig;
@@ -302,9 +275,6 @@ static void SC16ApplyAllScenes(void)
     );
 }
 
-/*
- * Window xuất hiện.
- */
 - (void)setHidden:(BOOL)hidden
 {
     %orig(hidden);
@@ -340,17 +310,11 @@ static void SC16ApplyAllScenes(void)
         if (!SC16Enabled())
             return;
 
-        /*
-         * Đợi UIKit tạo window/scene.
-         */
         dispatch_async(
             dispatch_get_main_queue(),
             ^{
                 SC16ApplyAllScenes();
 
-                /*
-                 * Apply lại sau layout.
-                 */
                 dispatch_after(
                     dispatch_time(
                         DISPATCH_TIME_NOW,
