@@ -3,28 +3,7 @@
 
 #pragma mark - Configuration
 
-/*
- * Số point crop ở mỗi đầu.
- *
- * Portrait:
- *   trên 34
- *   dưới 34
- *
- * Landscape:
- *   trái 34
- *   phải 34
- */
 static CGFloat const SC16_CROP = 34.0;
-
-/*
- * Dịch UI sau khi crop.
- *
- * Portrait:
- *   lên 8 px
- *
- * Landscape:
- *   sang trái 8 px
- */
 static CGFloat const SC16_OFFSET = 8.0;
 
 #pragma mark - Enable
@@ -53,9 +32,6 @@ static BOOL SC16ShouldSkipWindow(UIWindow *window)
     NSString *name =
         NSStringFromClass(window.class);
 
-    /*
-     * Không đụng keyboard.
-     */
     if ([name containsString:@"UITextEffectsWindow"])
         return YES;
 
@@ -90,65 +66,8 @@ static BOOL SC16IsLandscapeWindow(UIWindow *window)
     return width > height;
 }
 
-#pragma mark - Reset UI Transform
-
-/*
- * Reset transform của root view trước khi
- * áp dụng offset mới.
- *
- * Quan trọng:
- * không được cộng dồn:
- *
- * -8
- * -16
- * -24
- *
- * sau nhiều lần rotation/apply.
- */
-static void SC16ResetRootViewTransform(UIWindow *window)
-{
-    if (!window)
-        return;
-
-    UIViewController *rootVC =
-        window.rootViewController;
-
-    if (!rootVC)
-        return;
-
-    UIView *rootView =
-        rootVC.view;
-
-    if (!rootView)
-        return;
-
-    rootView.transform =
-        CGAffineTransformIdentity;
-}
-
 #pragma mark - UI Translation
 
-/*
- * Dịch UI bằng rootViewController.view.
- *
- * Đây là cơ chế giống bản reference:
- *
- * [window rootViewController]
- *       ↓
- * [rootVC view]
- *       ↓
- * setTransform:
- *
- * Portrait:
- *   x = 0
- *   y = -8
- *
- * Landscape:
- *   x = -8
- *   y = 0
- *
- * Không dịch UIWindow.
- */
 static void SC16ApplyUITranslation(UIWindow *window)
 {
     if (!window)
@@ -167,7 +86,7 @@ static void SC16ApplyUITranslation(UIWindow *window)
         return;
 
     /*
-     * Luôn reset trước.
+     * Luôn reset trước để không cộng dồn.
      */
     rootView.transform =
         CGAffineTransformIdentity;
@@ -178,9 +97,8 @@ static void SC16ApplyUITranslation(UIWindow *window)
     if (SC16IsLandscapeWindow(window))
     {
         /*
-         * LANDSCAPE
-         *
-         * Dịch UI sang trái 8 px.
+         * Ngang:
+         * dịch UI sang trái 8 px.
          */
         x = -SC16_OFFSET;
         y = 0.0;
@@ -188,17 +106,13 @@ static void SC16ApplyUITranslation(UIWindow *window)
     else
     {
         /*
-         * PORTRAIT
-         *
-         * Dịch UI lên 8 px.
+         * Dọc:
+         * dịch UI lên 8 px.
          */
         x = 0.0;
         y = -SC16_OFFSET;
     }
 
-    /*
-     * setTransform giống cơ chế bản reference.
-     */
     rootView.transform =
         CGAffineTransformMakeTranslation(
             x,
@@ -206,19 +120,8 @@ static void SC16ApplyUITranslation(UIWindow *window)
         );
 }
 
-#pragma mark - Real Crop Mask
+#pragma mark - Real Crop
 
-/*
- * Crop window bằng mask.
- *
- * Window vẫn giữ nguyên:
- *
- * - frame
- * - bounds
- * - center
- *
- * Chỉ vùng render được giới hạn.
- */
 static void SC16ApplyCrop(UIWindow *window)
 {
     if (!SC16Enabled())
@@ -238,9 +141,7 @@ static void SC16ApplyCrop(UIWindow *window)
 
     if (width <= 0.0 ||
         height <= 0.0)
-    {
         return;
-    }
 
     CGFloat left = 0.0;
     CGFloat right = 0.0;
@@ -248,30 +149,22 @@ static void SC16ApplyCrop(UIWindow *window)
     CGFloat bottom = 0.0;
 
     /*
-     * PORTRAIT
-     *
-     * Cắt trên / dưới.
+     * DỌC:
+     * crop trên + dưới 34.
      */
     if (height > width)
     {
-        top =
-            SC16_CROP;
-
-        bottom =
-            SC16_CROP;
+        top = SC16_CROP;
+        bottom = SC16_CROP;
     }
     /*
-     * LANDSCAPE
-     *
-     * Cắt trái / phải.
+     * NGANG:
+     * crop trái + phải 34.
      */
     else
     {
-        left =
-            SC16_CROP;
-
-        right =
-            SC16_CROP;
+        left = SC16_CROP;
+        right = SC16_CROP;
     }
 
     CGFloat visibleWidth =
@@ -282,26 +175,22 @@ static void SC16ApplyCrop(UIWindow *window)
 
     if (visibleWidth <= 0.0 ||
         visibleHeight <= 0.0)
-    {
         return;
-    }
 
     /*
-     * Xóa mask cũ.
-     *
-     * Quan trọng khi rotation.
-     */
-    window.layer.mask =
-        nil;
-
-    /*
-     * Không thay đổi geometry.
+     * Không thay đổi geometry UIWindow.
      */
     window.transform =
         CGAffineTransformIdentity;
 
     /*
-     * Vùng được phép render.
+     * Xóa mask cũ.
+     */
+    window.layer.mask =
+        nil;
+
+    /*
+     * Vùng hiển thị thực tế.
      */
     CGRect visibleRect =
         CGRectMake(
@@ -311,9 +200,6 @@ static void SC16ApplyCrop(UIWindow *window)
             visibleHeight
         );
 
-    /*
-     * Tạo mask.
-     */
     CAShapeLayer *mask =
         [CAShapeLayer layer];
 
@@ -331,9 +217,6 @@ static void SC16ApplyCrop(UIWindow *window)
 
     CGPathRelease(path);
 
-    /*
-     * Crop thực sự.
-     */
     window.layer.mask =
         mask;
 }
@@ -349,14 +232,12 @@ static void SC16ApplyWindow(UIWindow *window)
         return;
 
     /*
-     * Crop trước.
+     * Crop vùng hiển thị.
      */
     SC16ApplyCrop(window);
 
     /*
-     * Sau đó dịch root view.
-     *
-     * Không dịch window.
+     * Dịch phần UI vào vùng hiển thị.
      */
     SC16ApplyUITranslation(window);
 }
@@ -373,13 +254,8 @@ static void SC16ApplyScene(UIWindowScene *scene)
 
     if (scene.activationState ==
         UISceneActivationStateUnattached)
-    {
         return;
-    }
 
-    /*
-     * Dùng UIWindowScene.windows.
-     */
     NSArray<UIWindow *> *windows =
         scene.windows;
 
@@ -409,9 +285,7 @@ static void SC16ApplyAllScenes(void)
     {
         if (![scene
               isKindOfClass:[UIWindowScene class]])
-        {
             continue;
-        }
 
         SC16ApplyScene(
             (UIWindowScene *)scene
@@ -431,10 +305,6 @@ static void SC16ScheduleApply(void)
         ^{
             SC16ApplyAllScenes();
 
-            /*
-             * UIKit có thể cập nhật root view
-             * sau lần apply đầu tiên.
-             */
             dispatch_after(
                 dispatch_time(
                     DISPATCH_TIME_NOW,
@@ -466,9 +336,6 @@ static void SC16InstallObservers(void)
     NSNotificationCenter *center =
         NSNotificationCenter.defaultCenter;
 
-    /*
-     * App active.
-     */
     [center addObserverForName:
         UIApplicationDidBecomeActiveNotification
         object:nil
@@ -479,9 +346,6 @@ static void SC16InstallObservers(void)
             SC16ScheduleApply();
         }];
 
-    /*
-     * Scene active.
-     */
     [center addObserverForName:
         UISceneDidActivateNotification
         object:nil
@@ -494,9 +358,7 @@ static void SC16InstallObservers(void)
 
             if (![scene
                   isKindOfClass:[UIWindowScene class]])
-            {
                 return;
-            }
 
             dispatch_async(
                 dispatch_get_main_queue(),
@@ -508,9 +370,6 @@ static void SC16InstallObservers(void)
             );
         }];
 
-    /*
-     * Scene foreground.
-     */
     [center addObserverForName:
         UISceneWillEnterForegroundNotification
         object:nil
@@ -523,9 +382,7 @@ static void SC16InstallObservers(void)
 
             if (![scene
                   isKindOfClass:[UIWindowScene class]])
-            {
                 return;
-            }
 
             dispatch_async(
                 dispatch_get_main_queue(),
@@ -537,9 +394,6 @@ static void SC16InstallObservers(void)
             );
         }];
 
-    /*
-     * Rotation.
-     */
     [center addObserverForName:
         UIDeviceOrientationDidChangeNotification
         object:nil
@@ -547,9 +401,6 @@ static void SC16InstallObservers(void)
         usingBlock:
         ^(__unused NSNotification *notification)
         {
-            /*
-             * Chờ UIKit cập nhật bounds.
-             */
             dispatch_after(
                 dispatch_time(
                     DISPATCH_TIME_NOW,
@@ -562,10 +413,6 @@ static void SC16InstallObservers(void)
                 ^{
                     SC16ApplyAllScenes();
 
-                    /*
-                     * Apply lần 2 để bắt trường hợp
-                     * root view/bounds cập nhật trễ.
-                     */
                     dispatch_after(
                         dispatch_time(
                             DISPATCH_TIME_NOW,
@@ -588,10 +435,6 @@ static void SC16InstallObservers(void)
 
 %hook UIWindow
 
-/*
- * Window mới hiển thị.
- */
-
 - (void)makeKeyAndVisible
 {
     %orig;
@@ -613,10 +456,6 @@ static void SC16InstallObservers(void)
     );
 }
 
-/*
- * Window xuất hiện.
- */
-
 - (void)setHidden:(BOOL)hidden
 {
     %orig(hidden);
@@ -635,9 +474,7 @@ static void SC16InstallObservers(void)
         ^{
             if (!window ||
                 window.hidden)
-            {
                 return;
-            }
 
             SC16ApplyWindow(window);
         }
@@ -655,9 +492,6 @@ static void SC16InstallObservers(void)
         if (!SC16Enabled())
             return;
 
-        /*
-         * Đợi UIKit tạo scene/window.
-         */
         dispatch_async(
             dispatch_get_main_queue(),
             ^{
@@ -665,9 +499,6 @@ static void SC16InstallObservers(void)
 
                 SC16ApplyAllScenes();
 
-                /*
-                 * Apply thêm sau khi layout ổn định.
-                 */
                 dispatch_after(
                     dispatch_time(
                         DISPATCH_TIME_NOW,
