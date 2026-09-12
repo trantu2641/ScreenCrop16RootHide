@@ -16,6 +16,7 @@ jobs:
           set -euxo pipefail
 
           sudo apt-get update
+
           sudo apt-get install -y \
             git \
             curl \
@@ -24,7 +25,11 @@ jobs:
             fakeroot \
             rsync \
             xz-utils \
-            libio-compress-lzma-perl
+            libio-compress-lzma-perl \
+            clang \
+            llvm \
+            lld \
+            build-essential
 
       - name: Install roothide Theos
         shell: bash
@@ -35,20 +40,18 @@ jobs:
 
           rm -rf "$THEOS"
 
-          git clone \
-            --depth=1 \
-            --recurse-submodules \
-            https://github.com/roothide/theos.git \
-            "$THEOS"
+          curl -fsSL \
+            https://raw.githubusercontent.com/roothide/theos/master/bin/install-theos \
+            -o /tmp/install-theos.sh
+
+          chmod +x /tmp/install-theos.sh
+
+          bash /tmp/install-theos.sh
 
           echo "THEOS=$THEOS" >> "$GITHUB_ENV"
 
           echo "=== Theos ==="
           ls -la "$THEOS"
-
-          echo "=== Toolchain ==="
-          test -d "$THEOS/toolchain"
-          ls -la "$THEOS/toolchain"
 
       - name: Install iOS 16.5 SDK
         shell: bash
@@ -74,6 +77,7 @@ jobs:
 
           git sparse-checkout init --cone
           git sparse-checkout set iPhoneOS16.5.sdk
+
           git checkout
 
           test -d iPhoneOS16.5.sdk
@@ -82,12 +86,91 @@ jobs:
 
           cp -R \
             iPhoneOS16.5.sdk \
-            "$THEOS/sdks/iPhoneOS16.5.sdk"
+            "$THEOS/sdks/"
 
           echo "=== Installed SDK ==="
           ls -ld "$THEOS/sdks/iPhoneOS16.5.sdk"
 
-      - name: Verify Theos
+      - name: Detect Theos toolchain
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          export THEOS="$HOME/theos"
+
+          echo "=== Searching for clang ==="
+
+          find "$THEOS/toolchain" \
+            -type f \
+            \( -name clang -o -name clang++ \) \
+            -print \
+            2>/dev/null || true
+
+          echo "=== Theos toolchain directories ==="
+
+          find "$THEOS/toolchain" \
+            -maxdepth 4 \
+            -type d \
+            -print \
+            2>/dev/null || true
+
+          echo "=== System clang ==="
+          command -v clang
+          command -v clang++
+
+          clang --version
+          clang++ --version
+
+      - name: Configure Theos compiler
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          export THEOS="$HOME/theos"
+
+          TOOLCHAIN_ROOT="$THEOS/toolchain"
+
+          echo "THEOS=$THEOS"
+
+          echo "=== Looking for Theos compiler ==="
+
+          THEOS_CLANG="$(find "$TOOLCHAIN_ROOT" \
+            -type f \
+            -name clang \
+            -perm -111 \
+            -print \
+            2>/dev/null | head -n 1 || true)"
+
+          THEOS_CLANGXX="$(find "$TOOLCHAIN_ROOT" \
+            -type f \
+            -name clang++ \
+            -perm -111 \
+            -print \
+            2>/dev/null | head -n 1 || true)"
+
+          if [ -n "$THEOS_CLANG" ] && [ -n "$THEOS_CLANGXX" ]; then
+            echo "Found Theos clang:"
+            echo "$THEOS_CLANG"
+            echo "$THEOS_CLANGXX"
+
+            TOOLCHAIN_BIN="$(dirname "$THEOS_CLANG")"
+
+            echo "THEOS_TOOLCHAIN_BIN=$TOOLCHAIN_BIN" >> "$GITHUB_ENV"
+
+            echo "PATH=$TOOLCHAIN_BIN:$PATH" >> "$GITHUB_ENV"
+
+            echo "TARGET=iphone:clang:16.5:16.0" >> "$GITHUB_ENV"
+          else
+            echo "Theos-specific clang was not found."
+            echo "Using system LLVM compiler."
+
+            echo "THEOS_TOOLCHAIN_BIN=/usr/bin" >> "$GITHUB_ENV"
+            echo "PATH=/usr/bin:$PATH" >> "$GITHUB_ENV"
+
+            echo "TARGET=iphone:clang:16.5:16.0" >> "$GITHUB_ENV"
+          fi
+
+      - name: Verify toolchain
         shell: bash
         run: |
           set -euxo pipefail
@@ -97,39 +180,33 @@ jobs:
           echo "=== THEOS ==="
           echo "$THEOS"
 
-          test -d "$THEOS"
+          echo "=== PATH ==="
+          echo "$PATH"
 
           echo "=== SDK ==="
           test -d "$THEOS/sdks/iPhoneOS16.5.sdk"
           ls -ld "$THEOS/sdks/iPhoneOS16.5.sdk"
 
-          echo "=== SDK contents ==="
-          ls "$THEOS/sdks/iPhoneOS16.5.sdk" | head
+          echo "=== Compiler ==="
+          command -v clang
+          command -v clang++
 
-          echo "=== Roothide vendor ==="
-          test -d "$THEOS/vendor/mod/roothide"
-          ls -ld "$THEOS/vendor/mod/roothide"
+          clang --version
+          clang++ --version
 
-      - name: Verify toolchain
-        shell: bash
-        run: |
-          set -euxo pipefail
+          echo "=== Theos ==="
+          test -d "$THEOS/makefiles"
+          test -d "$THEOS/vendor"
 
-          export THEOS="$HOME/theos"
+          echo "=== Roothide module ==="
 
-          echo "=== Linux iPhone toolchain ==="
-
-          if [ -d "$THEOS/toolchain/linux/iphone/bin" ]; then
-            ls -la "$THEOS/toolchain/linux/iphone/bin/"
+          if [ -d "$THEOS/vendor/mod/roothide" ]; then
+            ls -ld "$THEOS/vendor/mod/roothide"
+          else
+            echo "Roothide module directory not found."
+            echo "Checking vendor:"
+            find "$THEOS/vendor" -maxdepth 3 -type d -print 2>/dev/null || true
           fi
-
-          echo "=== Clang candidates ==="
-
-          find "$THEOS/toolchain" \
-            -type f \
-            \( -name clang -o -name clang++ \) \
-            -print \
-            | head -20
 
       - name: Build
         shell: bash
@@ -138,7 +215,10 @@ jobs:
 
           export THEOS="$HOME/theos"
 
+          echo "=== Build environment ==="
           echo "THEOS=$THEOS"
+          echo "TARGET=$TARGET"
+          echo "THEOS_TOOLCHAIN_BIN=${THEOS_TOOLCHAIN_BIN:-}"
 
           make clean
 
@@ -158,14 +238,9 @@ jobs:
             -name "*.deb" \
             -print
 
-          DEB="$(find packages -type f -name "*.deb" | head -n 1)"
+          test -n "$(find packages -type f -name '*.deb' -print -quit)"
 
-          test -n "$DEB"
-          test -f "$DEB"
-
-          echo "=== DEB information ==="
-
-          dpkg-deb -I "$DEB"
+          dpkg-deb -I packages/*.deb
 
       - name: Upload DEB
         uses: actions/upload-artifact@v4
