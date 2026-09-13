@@ -23,9 +23,7 @@ static CGFloat const SC16_CROP = 34.0;
  *   lên 10px
  *
  * Landscape:
- *   sang trái 10px
- *
- * Không dùng giá trị này cho crop.
+ *   KHÔNG DỊCH
  */
 static CGFloat const SC16_UI_SHIFT = 10.0;
 
@@ -285,16 +283,17 @@ static void SC16ApplyCrop(UIWindow *window)
 #pragma mark - UI Shift
 
 /*
- * Dịch ROOT UI, không dịch UIWindow.
- *
- * Vì crop nằm trên window.layer,
- * root view được dịch bên trong vùng crop.
+ * Dịch ROOT UI.
  *
  * Portrait:
- *   Y - 10
+ *   Y - 10px
  *
  * Landscape:
- *   X - 10
+ *   Không dịch.
+ *
+ * QUAN TRỌNG:
+ * Không transform UIWindow.
+ * Không thay đổi crop.
  */
 static void SC16ApplyUIShift(UIWindow *window)
 {
@@ -311,31 +310,28 @@ static void SC16ApplyUIShift(UIWindow *window)
         return;
 
     /*
-     * Không thay đổi frame/bounds.
-     * Chỉ dịch nội dung UI.
+     * LANDSCAPE:
+     *
+     * Giữ nguyên vị trí UI.
      */
-    CGAffineTransform transform =
-        CGAffineTransformIdentity;
-
     if (SC16IsLandscapeWindow(window))
     {
-        transform =
-            CGAffineTransformMakeTranslation(
-                -SC16_UI_SHIFT,
-                0.0
-            );
-    }
-    else
-    {
-        transform =
-            CGAffineTransformMakeTranslation(
-                0.0,
-                -SC16_UI_SHIFT
-            );
+        rootView.transform =
+            CGAffineTransformIdentity;
+
+        return;
     }
 
+    /*
+     * PORTRAIT:
+     *
+     * Chỉ đẩy UI lên 10px.
+     */
     rootView.transform =
-        transform;
+        CGAffineTransformMakeTranslation(
+            0.0,
+            -SC16_UI_SHIFT
+        );
 }
 
 #pragma mark - Multitasking Detection
@@ -371,11 +367,6 @@ static BOOL SC16IsMultitaskingView(UIView *view)
 
 #pragma mark - Multitasking Corner
 
-/*
- * Chỉ ép corner của view đa nhiệm.
- *
- * Không áp dụng cho app window bình thường.
- */
 static void SC16ApplyMultitaskingCorner(UIView *view)
 {
     if (!SC16Enabled())
@@ -393,10 +384,6 @@ static void SC16ApplyMultitaskingCorner(UIView *view)
     layer.cornerRadius =
         SC16_MULTITASK_CORNER;
 
-    /*
-     * Đảm bảo cornerRadius = 0
-     * thực sự không tạo clipping bo góc.
-     */
     if (SC16_MULTITASK_CORNER <= 0.0)
     {
         layer.masksToBounds = NO;
@@ -418,15 +405,16 @@ static void SC16ApplyWindow(UIWindow *window)
         return;
 
     /*
-     * Thứ tự quan trọng:
-     *
-     * 1. Crop window.
-     * 2. Dịch root UI.
-     *
-     * Không transform UIWindow.
+     * Crop giữ nguyên 34px.
      */
     SC16ApplyCrop(window);
 
+    /*
+     * UI shift riêng.
+     *
+     * Dọc: -10px
+     * Ngang: 0px
+     */
     SC16ApplyUIShift(window);
 }
 
@@ -485,7 +473,7 @@ static void SC16ApplyAllScenes(void)
     }
 }
 
-#pragma mark - Window Hooks
+#pragma mark - UIWindow Hooks
 
 %hook UIWindow
 
@@ -538,11 +526,6 @@ static void SC16ApplyAllScenes(void)
 
 #pragma mark - UIView Hooks
 
-/*
- * Hook UIView để bắt view/card của App Switcher.
- *
- * Không sửa geometry của các view khác.
- */
 %hook UIView
 
 - (void)didMoveToWindow
